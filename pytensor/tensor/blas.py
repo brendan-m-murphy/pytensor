@@ -1030,7 +1030,7 @@ class Gemm(GemmRelated):
                 %(fail)s
             }
 
-            if(PyArray_MoveInto(x_new, %(_x)s) == -1)
+            if(PyArray_CopyInto(x_new, %(_x)s) == -1)
             {
                 %(fail)s
             }
@@ -1056,7 +1056,7 @@ class Gemm(GemmRelated):
                 %(fail)s
             }
 
-            if(PyArray_MoveInto(y_new, %(_y)s) == -1)
+            if(PyArray_CopyInto(y_new, %(_y)s) == -1)
             {
                 %(fail)s
             }
@@ -1102,7 +1102,7 @@ class Gemm(GemmRelated):
     def c_code_cache_version(self):
         gv = self.build_gemm_version()
         if gv:
-            return (7, *gv)
+            return (8, *gv)
         else:
             return gv
 
