@@ -2,7 +2,15 @@ import warnings
 from collections.abc import Collection, Iterable
 
 import numpy as np
-from numpy.core.multiarray import normalize_axis_index
+from numpy.exceptions import AxisError
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+except ModuleNotFoundError:
+    # numpy < 2.0
+    from numpy.core.multiarray import normalize_axis_index
+    from numpy.core.numeric import normalize_axis_tuple
 
 import pytensor
 import pytensor.scalar.basic as ps
@@ -596,9 +604,9 @@ def squeeze(x, axis=None):
 
     # scalar inputs are treated as 1D regarding axis in this `Op`
     try:
-        axis = np.core.numeric.normalize_axis_tuple(axis, ndim=max(1, _x.ndim))
-    except np.AxisError:
-        raise np.AxisError(axis, ndim=_x.ndim)
+        axis = normalize_axis_tuple(axis, ndim=max(1, _x.ndim))
+    except AxisError:
+        raise AxisError(axis, ndim=_x.ndim)
 
     if not axis:
         # Nothing to do
