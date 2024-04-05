@@ -4293,7 +4293,7 @@ def expand_dims(a: np.ndarray | TensorVariable, axis: Sequence[int]) -> TensorVa
         axis = (axis,)
 
     out_ndim = len(axis) + a.ndim
-    axis = np.core.numeric.normalize_axis_tuple(axis, out_ndim)
+    axis = normalize_axis_tuple(axis, out_ndim)
 
     if not axis:
         return a
