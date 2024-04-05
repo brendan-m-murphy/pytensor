@@ -531,7 +531,7 @@ class GemmRelated(COp):
         int unit = 0;
 
         int type_num = PyArray_DESCR(%(_x)s)->type_num;
-        int type_size = PyArray_DESCR(%(_x)s)->elsize; // in bytes
+        int type_size = PyArray_ITEMSIZE(%(_x)s); // in bytes
 
         npy_intp* Nx = PyArray_DIMS(%(_x)s);
         npy_intp* Ny = PyArray_DIMS(%(_y)s);
@@ -822,7 +822,7 @@ class GemmRelated(COp):
         )
 
     def build_gemm_version(self):
-        return (13, blas_header_version())
+        return (14, blas_header_version())
 
 
 class Gemm(GemmRelated):
@@ -1887,7 +1887,7 @@ class BatchedDot(COp):
 
         return f"""
         int type_num = PyArray_DESCR({_x})->type_num;
-        int type_size = PyArray_DESCR({_x})->elsize; // in bytes
+        int type_size = PyArray_ITEMSIZE({_x}); // in bytes
 
         if (PyArray_NDIM({_x}) != 3) {{
             PyErr_Format(PyExc_NotImplementedError,
@@ -1947,7 +1947,7 @@ class BatchedDot(COp):
     def c_code_cache_version(self):
         from pytensor.tensor.blas_headers import blas_header_version
 
-        return (5, blas_header_version())
+        return (6, blas_header_version())
 
     def grad(self, inp, grads):
         x, y = inp
