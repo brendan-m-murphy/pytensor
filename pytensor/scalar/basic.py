@@ -470,7 +470,14 @@ class ScalarType(CType, HasDataType, HasShape):
                     "Scalar check failed ({dtype})");
                 {fail}
             }}
-            """
+            """.format(
+                **dict(
+                    sub,
+                    name=name,
+                    dtype=specs[1],
+                    pyarr_type=f"Py{specs[2]}ArrType_Type",
+                )
+            )
         else:
             pre = ""
         return (
@@ -504,7 +511,8 @@ class ScalarType(CType, HasDataType, HasShape):
 
     def c_support_code(self, **kwargs):
         if self.dtype.startswith("complex"):
-            cplx_types = ["pytensor_complex64", "pytensor_complex128"]
+            # complex types are: "pytensor_complex64", "pytensor_complex128"
+            # but it is more convenient to have their bit widths:
             cplx_types_bit_widths = ["64", "128"]
             real_types = [
                 "npy_int8",
