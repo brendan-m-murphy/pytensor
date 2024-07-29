@@ -2525,6 +2525,9 @@ class AdvancedIncSubtensor1(COp):
         numpy_ver = [int(n) for n in np.__version__.split(".")[:2]]
         if bool(numpy_ver < [1, 8]):
             raise NotImplementedError
+        if bool(numpy_ver >= [2, 0]):
+            raise NotImplementedError
+
         x, y, idx = input_names
         out = output_names[0]
         copy_of_x = self.copy_of_x(x)
