@@ -480,7 +480,7 @@ class TestGrad:
         int_type = imatrix().dtype
         float_type = "float64"
 
-        X = rng.standard_normal((m, d), dtype=int_type) * 127.0
+        X = rng.standard_normal((m, d)).astype(int_type) * 127.0
         W = rng.standard_normal((d, n), dtype=W.dtype)
         b = rng.standard_normal(n, dtype=b.dtype)
 
