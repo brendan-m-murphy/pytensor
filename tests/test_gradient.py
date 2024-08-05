@@ -1026,21 +1026,21 @@ def test_jacobian_scalar():
     # test when the jacobian is called with a tensor as wrt
     Jx = jacobian(y, x)
     f = pytensor.function([x], Jx)
-    vx = rng.uniform(dtype=pytensor.config.floatX)
+    vx = np.asarray(rng.uniform(), dtype=pytensor.config.floatX)
     assert np.allclose(f(vx), 2)
 
     # test when the jacobian is called with a tuple as wrt
     Jx = jacobian(y, (x,))
     assert isinstance(Jx, tuple)
     f = pytensor.function([x], Jx[0])
-    vx = rng.uniform(dtype=pytensor.config.floatX)
+    vx = np.asarray(rng.uniform(), dtype=pytensor.config.floatX)
     assert np.allclose(f(vx), 2)
 
     # test when the jacobian is called with a list as wrt
     Jx = jacobian(y, [x])
     assert isinstance(Jx, list)
     f = pytensor.function([x], Jx[0])
-    vx = rng.uniform(dtype=pytensor.config.floatX)
+    vx = np.asarray(rng.uniform(), dtype=pytensor.config.floatX)
     assert np.allclose(f(vx), 2)
 
     # test when the jacobian is called with a list of two elements
@@ -1048,8 +1048,8 @@ def test_jacobian_scalar():
     y = x * z
     Jx = jacobian(y, [x, z])
     f = pytensor.function([x, z], Jx)
-    vx = rng.uniform(dtype=pytensor.config.floatX)
-    vz = rng.uniform(dtype=pytensor.config.floatX)
+    vx = np.asarray(rng.uniform(), dtype=pytensor.config.floatX)
+    vz = np.asarray(rng.uniform(), dtype=pytensor.config.floatX)
     vJx = f(vx, vz)
 
     assert np.allclose(vJx[0], vz)
