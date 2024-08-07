@@ -12,6 +12,7 @@ except ModuleNotFoundError:
     # numpy < 2.0
     from numpy.core.numeric import normalize_axis_tuple
 
+
 import pytensor.tensor.basic
 from pytensor.configdefaults import config
 from pytensor.gradient import DisconnectedType

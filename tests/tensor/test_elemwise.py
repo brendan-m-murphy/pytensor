@@ -121,7 +121,11 @@ class TestDimShuffle(unittest_tools.InferShapeTester):
 
     def test_too_big_rank(self):
         x = self.type(self.dtype, shape=())()
-        y = x.dimshuffle(("x",) * (np.MAXDIMS + 1))
+        if np.__version__ >= "2.0":
+            # np.MAXDIMS removed, max number of dims increased to 64 from 32
+            y = x.dimshuffle(("x",) * (64 + 1))
+        else:
+            y = x.dimshuffle(("x",) * (32 + 1))
         with pytest.raises(ValueError):
             y.eval({x: 0})
 
