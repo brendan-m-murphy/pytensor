@@ -306,7 +306,7 @@ class CumOp(COp):
             if np.__version__ < "2":
                 return 32  # value used to mark axis = None in Numpy C-API prior to version 2.0
             else:
-                return -2147483648  # the value of "NPY_RAVEL_AXIS"
+                return np.iinfo(np.int32).min  # the value of "NPY_RAVEL_AXIS"
         return self.axis
 
     def make_node(self, x):
@@ -374,15 +374,25 @@ class CumOp(COp):
         fail = sub["fail"]
         params = sub["params"]
 
-        code = f"""
-                int axis = {params}->c_axis;
+        if self.axis is None:
+            axis_code = "int axis = NPY_RAVEL_AXIS;\n"
+        else:
+            axis_code = "int axis = {params}->c_axis;\n"
+
+        code = (
+            axis_code
+            + """
+                #undef NPY_UF_DBG_TRACING
+                #define NPY_UF_DBG_TRACING 1
+
                 if (axis == 0 && PyArray_NDIM({x}) == 1)
                     axis = NPY_RAVEL_AXIS;
                 npy_intp shape[1] = {{ PyArray_SIZE({x}) }};
                 if(axis == NPY_RAVEL_AXIS && !({z} && PyArray_DIMS({z})[0] == shape[0]))
                 {{
                     Py_XDECREF({z});
-                    {z} = (PyArrayObject*) PyArray_SimpleNew(1, shape, PyArray_TYPE((PyArrayObject*) py_{x}));
+                    {z} = (PyArrayObject*) PyArray_SimpleNew(1, shape, PyArray_TYPE({x}));
+                    //{z} = (PyArrayObject*) PyArray_NewLikeArray((PyArrayObject*) PyArray_Ravel({x}, NPY_ANYORDER), NPY_ANYORDER, NULL, 0);
                 }}
 
                 else if(axis != NPY_RAVEL_AXIS && !({z} && PyArray_CompareLists(PyArray_DIMS({z}), PyArray_DIMS({x}), PyArray_NDIM({x}))))
@@ -411,12 +421,13 @@ class CumOp(COp):
                     // Because PyArray_CumSum/CumProd returns a newly created reference on t.
                     Py_XDECREF(t);
                 }}
-            """
+            """.format(**locals())
+        )
 
         return code
 
     def c_code_cache_version(self):
-        return 9
+        return ()
 
     def __str__(self):
         return f"{self.__class__.__name__}{{{self.axis}, {self.mode}}}"
