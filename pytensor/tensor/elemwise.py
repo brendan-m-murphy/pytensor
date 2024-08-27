@@ -1367,7 +1367,7 @@ class CAReduce(COp):
             try:
                 axis = normalize_axis_tuple(axis, ndim=max(1, inp_dims))
             except AxisError:
-                raise AxisError(axis, ndim=inp_dims)
+                raise AxisError(axis, ndim=inp_dims)  # type: ignore
 
             out_shape = tuple(
                 s for i, s in enumerate(input.type.shape) if i not in axis
