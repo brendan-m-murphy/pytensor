@@ -327,8 +327,8 @@ class TestPfunc:
         with pytest.raises(TypeError):
             g([3], np.array([6], dtype="int16"), 0)
 
-        # Value too big for b, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for b, raises OverflowError in numpy >= 2.0, TypeError in numpy <2.0
+        with pytest.raises(uint_overflow_error):
             g([3], [312], 0)
 
         h = pfunc([a, b, c], (a + b + c))  # Default: allow_input_downcast=None
@@ -336,7 +336,9 @@ class TestPfunc:
         assert np.all(h([3], [6], 0) == 9)
         with pytest.raises(TypeError):
             h([3], np.array([6], dtype="int16"), 0)
-        with pytest.raises(TypeError):
+
+        # Value too big for b, raises OverflowError in numpy >= 2.0, TypeError in numpy <2.0
+        with pytest.raises(uint_overflow_error):
             h([3], [312], 0)
 
     def test_allow_downcast_floatX(self):
