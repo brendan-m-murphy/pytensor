@@ -61,7 +61,7 @@ class SoftmaxGrad(COp):
         return [shape[1]]
 
     def c_code_cache_version(self):
-        return (4,)
+        return (5,)
 
     def c_support_code_apply(self, node: Apply, name: str) -> str:
         # return super().c_support_code_apply(node, name)
@@ -100,13 +100,15 @@ class SoftmaxGrad(COp):
                 {fail};
             }}
 
-            if (axis < 0) axis = sm_ndim + axis;
-            if ((axis < 0) || (iterate_axis && (axis > sm_ndim)))
+            if (iterate_axis)
             {{
-                PyErr_SetString(PyExc_ValueError, "invalid axis in SoftmaxGrad");
-                {fail};
+                if (axis < 0) axis = sm_ndim + axis;
+                if ((axis < 0) || (iterate_axis && (axis > sm_ndim)))
+                {{
+                    PyErr_SetString(PyExc_ValueError, "invalid axis in SoftmaxGrad");
+                    {fail};
+                }}
             }}
-
             if (({dx} == NULL)
                 || !(PyArray_CompareLists(PyArray_DIMS({dx}), PyArray_DIMS({sm}), sm_ndim)))
             {{
@@ -493,7 +495,7 @@ class Softmax(COp):
 
     @staticmethod
     def c_code_cache_version():
-        return (4,)
+        return (5,)
 
 
 def softmax(c, axis=None):
@@ -584,13 +586,15 @@ class LogSoftmax(COp):
                 {fail}
             }}
 
-            if (axis < 0) axis = x_ndim + axis;
-            if ((axis < 0) || (iterate_axis && (axis > x_ndim)))
+            if (iterate_axis)
             {{
-                PyErr_SetString(PyExc_ValueError, "invalid axis in LogSoftmax");
-                {fail}
+                if (axis < 0) axis = x_ndim + axis;
+                if ((axis < 0) || (iterate_axis && (axis > x_ndim)))
+                {{
+                    PyErr_SetString(PyExc_ValueError, "invalid axis in LogSoftmax");
+                    {fail}
+                }}
             }}
-
             // Allocate Output Array
             if (({sm}) == NULL || !(PyArray_CompareLists(PyArray_DIMS({sm}), PyArray_DIMS({x}), x_ndim)))
             {{
@@ -746,7 +750,7 @@ class LogSoftmax(COp):
 
     @staticmethod
     def c_code_cache_version():
-        return (1,)
+        return (2,)
 
 
 def log_softmax(c, axis=None):
