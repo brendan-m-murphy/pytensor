@@ -421,8 +421,8 @@ class CumOp(COp):
                     // Because PyArray_CumSum/CumProd returns a newly created reference on t.
                     Py_XDECREF(t);
                 }}
-            """.format(**locals())
-        )
+            """
+        ).format(**locals())
 
         return code
 
