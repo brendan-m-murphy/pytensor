@@ -183,8 +183,10 @@ class NumpyAutocaster:
         ]
 
         for dtype in try_dtypes:
-            x_ = np.asarray(x).astype(dtype=dtype)
-            if np.all(x == x_):
+            x_ = _asarray(x, dtype=dtype)
+            if np.all(
+                np.asarray(x) == x_
+            ):  # use np.asarray(x) to match TensorType.filter
                 break
         # returns either an exact x_==x, or the last cast x_
         return x_

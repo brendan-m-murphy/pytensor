@@ -3259,7 +3259,7 @@ def test_autocast_custom():
     # Test that the autocasting dtype is used correctly in expression-building
     with autocast_float_as("float32", "float64"):
         assert (dvector() + 1.1).dtype == "float64"
-        assert (fvector() + 1.1).dtype == "float32"
+        assert (fvector() + 1.1).dtype == config.floatX
         assert (fvector() + 1.0).dtype == "float32"
         assert (dvector() + np.float32(1.1)).dtype == "float64"
         assert (dvector() + np.float64(1.1)).dtype == "float64"
