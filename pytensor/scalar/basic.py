@@ -354,7 +354,7 @@ class ScalarType(CType, HasDataType, HasShape):
         l.append("<numpy/arrayobject.h>")
         l.append("<numpy/arrayscalars.h>")
         l.append("<numpy/npy_math.h>")
-        if config.lib__amblibm and c_compiler.supports_amdlibm:
+        if config.lib__amdlibm and c_compiler.supports_amdlibm:
             l += ["<amdlibm.h>"]
         return l
 
