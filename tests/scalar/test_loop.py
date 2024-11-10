@@ -218,10 +218,10 @@ def test_inner_composite(mode):
         4.73 + 9,
         rtol=1e-3,
     )
-    out16overflow = fn16(n_steps=9, x16=np.array(4.73, dtype="float16"))
-    assert out16overflow.dtype == "float16"
+    out32overflow = fn32(n_steps=9, x32=np.array(4.73, dtype="float32"))
+    assert out32overflow.dtype == "float32"
     # with this dtype overflow happens
-    assert np.isnan(out16overflow)
+    assert np.isnan(out32overflow)
 
 
 @mode

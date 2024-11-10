@@ -228,7 +228,7 @@ def constant(x, name=None, ndim=None, dtype=None) -> TensorConstant:
         elif x_.ndim > ndim:
             try:
                 x_ = np.squeeze(x_, axis=tuple(range(x_.ndim - ndim)))
-            except np.AxisError:
+            except np.exceptions.AxisError:
                 raise ValueError(
                     f"ndarray could not be cast to constant with {int(ndim)} dimensions"
                 )
