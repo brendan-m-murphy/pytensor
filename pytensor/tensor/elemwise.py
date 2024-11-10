@@ -4,7 +4,6 @@ from textwrap import dedent
 from typing import Literal
 
 import numpy as np
-from numpy.exceptions import AxisError
 from numpy.lib.array_utils import normalize_axis_tuple
 
 import pytensor.tensor.basic
@@ -1338,24 +1337,7 @@ class CAReduce(COp):
 
         axis = normalize_reduce_axis(self.axis, ndim=input.type.ndim)
 
-        # scalar inputs are treated as 1D regarding axis in this `Op`
-        if axis is not None:
-            try:
-                axis = normalize_axis_tuple(axis, ndim=max(1, inp_dims))
-            except AxisError:
-                raise AxisError(axis, ndim=inp_dims)  # type: ignore
-
-            out_shape = tuple(
-                s for i, s in enumerate(input.type.shape) if i not in axis
-            )
-        else:
-            out_shape = ()
-
-        if (
-            (axis is not None and any(a < 0 for a in axis))
-            or dtype != self.dtype
-            or acc_dtype != self.acc_dtype
-        ):
+        if axis != self.axis or dtype != self.dtype or acc_dtype != self.acc_dtype:
             op = self.clone(axis=axis, dtype=dtype, acc_dtype=acc_dtype)
         else:
             op = self

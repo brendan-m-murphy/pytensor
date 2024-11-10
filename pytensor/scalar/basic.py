@@ -472,14 +472,7 @@ class ScalarType(CType, HasDataType, HasShape):
                     "Scalar check failed ({dtype})");
                 {fail}
             }}
-            """.format(
-                **dict(
-                    sub,
-                    name=name,
-                    dtype=specs[1],
-                    pyarr_type=f"Py{specs[2]}ArrType_Type",
-                )
-            )
+            """
         else:
             pre = ""
         return (
