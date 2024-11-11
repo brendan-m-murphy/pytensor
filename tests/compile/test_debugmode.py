@@ -164,9 +164,9 @@ class WeirdBrokenOp(COp):
             """
         prep_vars = f"""
             //the output array has size M x N
-            npy_intp M = PyArray_DIMS(%(a)s)[0];
-            npy_intp Sa = PyArray_STRIDES(%(a)s)[0] / PyArray_ITEMSIZE(%(a)s);
-            npy_intp Sz = PyArray_STRIDES(%(z)s)[0] / PyArray_ITEMSIZE(%(z)s);
+            npy_intp M = PyArray_DIMS({a})[0];
+            npy_intp Sa = PyArray_STRIDES({a})[0] / PyArray_ITEMSIZE({a});
+            npy_intp Sz = PyArray_STRIDES({z})[0] / PyArray_ITEMSIZE({z});
 
             npy_double * Da = (npy_double*)PyArray_BYTES({a});
             npy_double * Dz = (npy_double*)PyArray_BYTES({z});
