@@ -121,7 +121,11 @@ class TestDimShuffle(unittest_tools.InferShapeTester):
 
     def test_too_big_rank(self):
         x = self.type(self.dtype, shape=())()
-        y = x.dimshuffle(("x",) * (np.MAXDIMS + 1))
+        if np.__version__ >= "2.0":
+            # np.MAXDIMS removed, max number of dims increased to 64 from 32
+            y = x.dimshuffle(("x",) * (64 + 1))
+        else:
+            y = x.dimshuffle(("x",) * (32 + 1))
         with pytest.raises(ValueError):
             y.eval({x: 0})
 
@@ -669,7 +673,7 @@ class TestCAReduce(unittest_tools.InferShapeTester):
         assert self.op(ps.add, axis=(-1,))(x).eval({x: 5}) == 5
 
         with pytest.raises(
-            np.AxisError,
+            np.exceptions.AxisError,
             match=re.escape("axis (-2,) is out of bounds for array of dimension 0"),
         ):
             self.op(ps.add, axis=(-2,))(x)

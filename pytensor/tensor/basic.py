@@ -228,7 +228,7 @@ def constant(x, name=None, ndim=None, dtype=None) -> TensorConstant:
         elif x_.ndim > ndim:
             try:
                 x_ = np.squeeze(x_, axis=tuple(range(x_.ndim - ndim)))
-            except np.AxisError:
+            except np.exceptions.AxisError:
                 raise ValueError(
                     f"ndarray could not be cast to constant with {int(ndim)} dimensions"
                 )
@@ -4293,7 +4293,7 @@ def expand_dims(a: np.ndarray | TensorVariable, axis: Sequence[int]) -> TensorVa
         axis = (axis,)
 
     out_ndim = len(axis) + a.ndim
-    axis = np.core.numeric.normalize_axis_tuple(axis, out_ndim)
+    axis = normalize_axis_tuple(axis, out_ndim)
 
     if not axis:
         return a

@@ -236,8 +236,8 @@ def normalize_reduce_axis(axis, ndim: int) -> tuple[int, ...] | None:
     if axis is not None:
         try:
             axis = normalize_axis_tuple(axis, ndim=max(1, ndim))
-        except np.AxisError:
-            raise np.AxisError(axis, ndim=ndim)
+        except np.exceptions.AxisError:
+            raise np.exceptions.AxisError(axis, ndim=ndim)
 
     # TODO: If axis tuple is equivalent to None, return None for more canonicalization?
     return cast(tuple, axis)

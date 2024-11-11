@@ -208,21 +208,20 @@ def test_inner_composite(mode):
     np.testing.assert_allclose(fn(n_steps=5, x=2.53), 2.53 + 5)
 
     # Now with a dtype that must be rebuilt
-    x16 = float16("x16")
-    y16 = op(n_steps, x16)
-    assert y16.type.dtype == "float16"
+    x32 = float32("x32")
+    y32 = op(n_steps, x32)
+    assert y32.type.dtype == "float32"
 
-    fn16 = function([n_steps, x16], y16, mode=mode)
-    out16 = fn16(n_steps=3, x16=np.array(4.73, dtype="float16"))
+    fn32 = function([n_steps, x32], y32, mode=mode)
     np.testing.assert_allclose(
-        out16,
-        4.73 + 3,
+        fn32(n_steps=9, x32=np.array(4.73, dtype="float32")),
+        4.73 + 9,
         rtol=1e-3,
     )
-    out16overflow = fn16(n_steps=9, x16=np.array(4.73, dtype="float16"))
-    assert out16overflow.dtype == "float16"
+    out32overflow = fn32(n_steps=9, x32=np.array(4.73, dtype="float32"))
+    assert out32overflow.dtype == "float32"
     # with this dtype overflow happens
-    assert np.isnan(out16overflow)
+    assert np.isnan(out32overflow)
 
 
 @mode

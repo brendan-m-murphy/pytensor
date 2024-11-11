@@ -2458,11 +2458,22 @@ class TestArithmeticCast:
         def numpy_i_scalar(dtype):
             return numpy_scalar(dtype)
 
+        pytensor_funcs = {
+            "scalar": pytensor_scalar,
+            "array": pytensor_array,
+            "i_scalar": pytensor_i_scalar,
+        }
+        numpy_funcs = {
+            "scalar": numpy_scalar,
+            "array": numpy_array,
+            "i_scalar": numpy_i_scalar,
+        }
+
         with config.change_flags(cast_policy="numpy+floatX"):
             # We will test all meaningful combinations of
             # scalar and array operations.
-            pytensor_args = [eval(f"pytensor_{c}") for c in combo]
-            numpy_args = [eval(f"numpy_{c}") for c in combo]
+            pytensor_args = [pytensor_funcs[c] for c in combo]
+            numpy_args = [numpy_funcs[c] for c in combo]
             pytensor_arg_1 = pytensor_args[0](a_type)
             pytensor_arg_2 = pytensor_args[1](b_type)
             pytensor_dtype = op(
@@ -3420,7 +3431,11 @@ class TestSumMeanMaxMinArgMaxVarReduceAxes:
 
 
 def reduce_bitwise_and(x, axis=-1, dtype="int8"):
-    identity = np.array((-1,), dtype=dtype)[0]
+    if dtype == "uint8":
+        # in numpy version >= 2.0, out of bounds uint8 values are not converted
+        identity = np.array((255,), dtype=dtype)[0]
+    else:
+        identity = np.array((-1,), dtype=dtype)[0]
 
     shape_without_axis = tuple(s for i, s in enumerate(x.shape) if i != axis)
     if 0 in shape_without_axis:
