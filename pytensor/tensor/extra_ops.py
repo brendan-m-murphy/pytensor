@@ -1200,7 +1200,7 @@ class Unique(Op):
     >>> y = pytensor.tensor.matrix()
     >>> g = pytensor.function([y], Unique(True, True, False)(y))
     >>> g([[1, 1, 1.0], (2, 3, 3.0)])
-    [array([1., 2., 3.]), array([0, 3, 4]), array([0, 0, 0, 1, 2, 2])]
+    [array([1., 2., 3.]), array([0, 3, 4]), array([[0, 0, 0], [1, 2, 2]])]
 
     """
 
