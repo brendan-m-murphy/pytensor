@@ -630,13 +630,10 @@ def test_known_grads():
 
     rng = np.random.default_rng([2012, 11, 15])
     values = [rng.standard_normal(10), rng.integers(10), rng.standard_normal()]
-<<<<<<< HEAD
     values = [
-        np.cast[ipt.dtype](value) for ipt, value in zip(inputs, values, strict=True)
+        np.asarray(value, dtype=ipt.dtype)
+        for ipt, value in zip(inputs, values, strict=True)
     ]
-=======
-    values = [np.asarray(value, dtype=ipt.dtype) for ipt, value in zip(inputs, values)]
->>>>>>> cb7c4eb3d (Replace np.cast with np.asarray)
 
     true_grads = grad(cost, inputs, disconnected_inputs="ignore")
     true_grads = pytensor.function(inputs, true_grads)
@@ -749,8 +746,10 @@ def test_subgraph_grad():
     inputs = [t, x]
     rng = np.random.default_rng([2012, 11, 15])
     values = [rng.standard_normal(2), rng.standard_normal(3)]
-    values = [np.asarray(value, dtype=ipt.dtype) for ipt, value in zip(inputs, values)]
-
+    values = [
+        np.asarray(value, dtype=ipt.dtype)
+        for ipt, value in zip(inputs, values, strict=True)
+    ]
 
     wrt = [w2, w1]
     cost = cost2 + cost1
