@@ -5,7 +5,7 @@ from textwrap import dedent
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple
+from numpy.lib.array_utils import normalize_axis_tuple
 
 from pytensor import config, printing
 from pytensor import scalar as ps

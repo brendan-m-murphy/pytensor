@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from typing import cast
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple  # type: ignore
+from numpy.lib.array_utils import normalize_axis_tuple
 
 import pytensor
 from pytensor.graph import FunctionGraph, Variable

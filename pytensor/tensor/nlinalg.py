@@ -4,7 +4,7 @@ from functools import partial
 from typing import Literal, cast
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple  # type: ignore
+from numpy.lib.array_utils import normalize_axis_tuple
 
 from pytensor import scalar as ps
 from pytensor.compile.builders import OpFromGraph

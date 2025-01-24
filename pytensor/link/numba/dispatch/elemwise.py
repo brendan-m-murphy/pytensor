@@ -4,7 +4,7 @@ from textwrap import dedent, indent
 import numba
 import numpy as np
 from numba.core.extending import overload
-from numpy.core.numeric import normalize_axis_index, normalize_axis_tuple
+from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
 
 from pytensor.graph.op import Op
 from pytensor.link.numba.dispatch import basic as numba_basic

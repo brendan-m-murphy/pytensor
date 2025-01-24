@@ -14,8 +14,7 @@ from typing import TYPE_CHECKING
 from typing import cast as type_cast
 
 import numpy as np
-from numpy.core.multiarray import normalize_axis_index
-from numpy.core.numeric import normalize_axis_tuple
+from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
 
 import pytensor
 import pytensor.scalar.sharedvar
