@@ -6,11 +6,27 @@ from itertools import pairwise
 from typing import cast
 
 import numpy as np
-from numpy._core.einsumfunc import (  # type: ignore
-    _find_contraction,
-    _parse_einsum_input,
-)
-from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+
+
+try:
+    from numpy._core.einsumfunc import (  # type: ignore
+        _find_contraction,
+        _parse_einsum_input,
+    )
+except ModuleNotFoundError as e:
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.einsumfunc import (  # type: ignore
+        _find_contraction,
+        _parse_einsum_input,
+    )
+
+try:
+    from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.multiarray import normalize_axis_index
+    from numpy.core.numeric import normalize_axis_tuple
 
 from pytensor.compile.builders import OpFromGraph
 from pytensor.tensor import TensorLike

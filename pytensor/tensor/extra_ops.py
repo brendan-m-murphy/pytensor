@@ -3,7 +3,15 @@ from collections.abc import Collection, Iterable
 
 import numpy as np
 from numpy.exceptions import AxisError
-from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.multiarray import normalize_axis_index
+    from numpy.core.numeric import normalize_axis_tuple
 
 import pytensor
 import pytensor.scalar.basic as ps

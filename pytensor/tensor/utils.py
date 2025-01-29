@@ -1,9 +1,17 @@
 import re
+import warnings
 from collections.abc import Sequence
 from typing import cast
 
 import numpy as np
-from numpy.lib.array_utils import normalize_axis_tuple
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.numeric import normalize_axis_tuple
 
 import pytensor
 from pytensor.graph import FunctionGraph, Variable

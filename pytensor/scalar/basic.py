@@ -726,7 +726,7 @@ class ScalarType(CType, HasDataType, HasShape):
         return ["import_array();"]
 
     def c_code_cache_version(self):
-        return (14, np.__version__)
+        return (14, np.version.git_revision)
 
     def get_shape_info(self, obj):
         return obj.itemsize
