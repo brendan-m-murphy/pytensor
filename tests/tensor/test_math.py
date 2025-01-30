@@ -391,11 +391,15 @@ TestAbsBroadcast = makeBroadcastTester(
     grad=_grad_broadcast_unary_normal,
 )
 
+
+neg_good = _good_broadcast_unary_normal.copy()
+neg_bad = {"uint8": neg_good.pop("uint8"), "uint16": neg_good.pop("uint16")}
 TestNegBroadcast = makeBroadcastTester(
     op=neg,
     expected=lambda x: -x,
-    good=_good_broadcast_unary_normal,
+    good=neg_good,
     grad=_grad_broadcast_unary_normal,
+    bad_compile=neg_bad,
 )
 
 TestSgnBroadcast = makeBroadcastTester(
