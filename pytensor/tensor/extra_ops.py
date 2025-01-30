@@ -1244,7 +1244,11 @@ class Unique(Op):
         if self.return_index:
             outputs.append(typ())
         if self.return_inverse:
-            outputs.append(typ())
+            if axis is None:
+                inverse_shape = TensorType(dtype="int64", shape=x.type.shape)
+            else:
+                inverse_shape = TensorType(dtype="int64", shape=(x.type.shape[axis],))
+            outputs.append(inverse_shape())
         if self.return_counts:
             outputs.append(typ())
         return Apply(self, [x], outputs)
@@ -1276,9 +1280,9 @@ class Unique(Op):
             out_shapes[0] = tuple(shape)
 
         if self.return_inverse:
-            shape = prod(x_shape) if self.axis is None else x_shape[axis]
+            shape = x_shape if self.axis is None else (x_shape[axis],)
             return_index_out_idx = 2 if self.return_index else 1
-            out_shapes[return_index_out_idx] = (shape,)
+            out_shapes[return_index_out_idx] = shape
 
         return out_shapes
 
