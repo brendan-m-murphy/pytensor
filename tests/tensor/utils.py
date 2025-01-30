@@ -374,7 +374,7 @@ def makeTester(
     _test_memmap = test_memmap
     _check_name = check_name
     _grad_eps = grad_eps
-    _bad_compile = bad_compile
+    _bad_compile = bad_compile or {}
 
     class Checker:
         op = staticmethod(_op)
