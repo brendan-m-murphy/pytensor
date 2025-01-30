@@ -391,11 +391,20 @@ TestAbsBroadcast = makeBroadcastTester(
     grad=_grad_broadcast_unary_normal,
 )
 
+
+# in numpy >= 2.0, negating a uint raises an error
+neg_good = _good_broadcast_unary_normal.copy()
+if np.lib.NumpyVersion(np.__version__) >= "2.0.0rc1":
+    neg_bad = {"uint8": neg_good.pop("uint8"), "uint16": neg_good.pop("uint16")}
+else:
+    neg_bad = None
+
 TestNegBroadcast = makeBroadcastTester(
     op=neg,
     expected=lambda x: -x,
-    good=_good_broadcast_unary_normal,
+    good=neg_good,
     grad=_grad_broadcast_unary_normal,
+    bad_compile=neg_bad,
 )
 
 TestSgnBroadcast = makeBroadcastTester(
