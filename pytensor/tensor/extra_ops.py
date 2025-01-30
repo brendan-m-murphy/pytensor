@@ -3,6 +3,7 @@ from collections.abc import Collection, Iterable
 
 import numpy as np
 from numpy.exceptions import AxisError
+from numpy.lib import NumpyVersion
 
 
 try:
@@ -1240,12 +1241,25 @@ class Unique(Op):
 
         outputs = [TensorType(dtype=x.dtype, shape=out_shape)()]
         typ = TensorType(dtype="int64", shape=(None,))
+
         if self.return_index:
             outputs.append(typ())
+
         if self.return_inverse:
-            outputs.append(typ())
+            if NumpyVersion(np.__version__) >= "2.0.0rc1":
+                if axis is None:
+                    inverse_shape = TensorType(dtype="int64", shape=x.type.shape)
+                else:
+                    inverse_shape = TensorType(
+                        dtype="int64", shape=(x.type.shape[axis],)
+                    )
+                outputs.append(inverse_shape())
+            else:
+                outputs.append(typ())
+
         if self.return_counts:
             outputs.append(typ())
+
         return Apply(self, [x], outputs)
 
     def perform(self, node, inputs, output_storage):
@@ -1275,9 +1289,16 @@ class Unique(Op):
             out_shapes[0] = tuple(shape)
 
         if self.return_inverse:
-            shape = prod(x_shape) if self.axis is None else x_shape[axis]
             return_index_out_idx = 2 if self.return_index else 1
-            out_shapes[return_index_out_idx] = (shape,)
+
+            if self.axis is not None:
+                shape = (x_shape[axis],)
+            elif NumpyVersion(np.__version__) >= "2.0.0rc1":
+                shape = x_shape
+            else:
+                shape = (prod(x_shape),)
+
+            out_shapes[return_index_out_idx] = shape
 
         return out_shapes
 
