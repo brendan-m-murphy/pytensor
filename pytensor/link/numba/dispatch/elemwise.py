@@ -1,10 +1,19 @@
+import warnings
 from functools import singledispatch
 from textwrap import dedent, indent
 
 import numba
 import numpy as np
 from numba.core.extending import overload
-from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.multiarray import normalize_axis_index
+    from numpy.core.numeric import normalize_axis_tuple
 
 from pytensor.graph.op import Op
 from pytensor.link.numba.dispatch import basic as numba_basic
