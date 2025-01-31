@@ -1,9 +1,17 @@
 import re
+import warnings
 from collections.abc import Sequence
 from typing import cast
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple  # type: ignore
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.numeric import normalize_axis_tuple  # type: ignore
 
 import pytensor
 from pytensor.graph import FunctionGraph, Variable
@@ -236,8 +244,8 @@ def normalize_reduce_axis(axis, ndim: int) -> tuple[int, ...] | None:
     if axis is not None:
         try:
             axis = normalize_axis_tuple(axis, ndim=max(1, ndim))
-        except np.AxisError:
-            raise np.AxisError(axis, ndim=ndim)
+        except np.exceptions.AxisError:
+            raise np.exceptions.AxisError(axis, ndim=ndim)
 
     # TODO: If axis tuple is equivalent to None, return None for more canonicalization?
     return cast(tuple, axis)

@@ -283,7 +283,7 @@ class TestScan:
         assert y.default_update is not None
         assert z_rng.default_update is not None
 
-        out_fn = function([], out, mode=Mode(optimizer=None))
+        out_fn = function([], out)
         res, z_res = out_fn()
         assert len(set(res)) == 4
         assert len(set(z_res)) == 1

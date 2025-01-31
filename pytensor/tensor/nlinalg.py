@@ -4,7 +4,15 @@ from functools import partial
 from typing import Literal, cast
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple  # type: ignore
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.numeric import normalize_axis_tuple  # type: ignore
+
 
 from pytensor import scalar as ps
 from pytensor.compile.builders import OpFromGraph

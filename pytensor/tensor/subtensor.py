@@ -18,6 +18,7 @@ from pytensor.graph.type import Type
 from pytensor.graph.utils import MethodNotDefined
 from pytensor.link.c.op import COp
 from pytensor.link.c.params_type import ParamsType
+from pytensor.npy_2_compat import npy_2_compat_header
 from pytensor.printing import Printer, pprint, set_precedence
 from pytensor.scalar.basic import ScalarConstant, ScalarVariable
 from pytensor.tensor import (
@@ -756,13 +757,15 @@ def get_constant_idx(
     Example usage where `v` and `a` are appropriately typed PyTensor variables :
     >>> from pytensor.scalar import int64
     >>> from pytensor.tensor import matrix
+    >>> import numpy as np
+    >>>
     >>> v = int64("v")
     >>> a = matrix("a")
     >>> b = a[v, 1:3]
     >>> b.owner.op.idx_list
     (ScalarType(int64), slice(ScalarType(int64), ScalarType(int64), None))
     >>> get_constant_idx(b.owner.op.idx_list, b.owner.inputs, allow_partial=True)
-    [v, slice(1, 3, None)]
+    [v, slice(np.int64(1), np.int64(3), None)]
     >>> get_constant_idx(b.owner.op.idx_list, b.owner.inputs)
     Traceback (most recent call last):
     pytensor.tensor.exceptions.NotScalarConstantError
@@ -2148,7 +2151,7 @@ class AdvancedSubtensor1(COp):
     def c_support_code(self, **kwargs):
         # In some versions of numpy, NPY_MIN_INTP is defined as MIN_LONG,
         # which is not defined. It should be NPY_MIN_LONG instead in that case.
-        return dedent(
+        return npy_2_compat_header() + dedent(
             """\
                 #ifndef MIN_LONG
                 #define MIN_LONG NPY_MIN_LONG
@@ -2173,7 +2176,7 @@ class AdvancedSubtensor1(COp):
                 if (!PyArray_CanCastSafely(i_type, NPY_INTP) &&
                     PyArray_SIZE({i_name}) > 0) {{
                     npy_int64 min_val, max_val;
-                    PyObject* py_min_val = PyArray_Min({i_name}, NPY_MAXDIMS,
+                    PyObject* py_min_val = PyArray_Min({i_name}, NPY_RAVEL_AXIS,
                                                        NULL);
                     if (py_min_val == NULL) {{
                         {fail};
@@ -2183,7 +2186,7 @@ class AdvancedSubtensor1(COp):
                     if (min_val == -1 && PyErr_Occurred()) {{
                         {fail};
                     }}
-                    PyObject* py_max_val = PyArray_Max({i_name}, NPY_MAXDIMS,
+                    PyObject* py_max_val = PyArray_Max({i_name}, NPY_RAVEL_AXIS,
                                                        NULL);
                     if (py_max_val == NULL) {{
                         {fail};
@@ -2242,7 +2245,7 @@ class AdvancedSubtensor1(COp):
         """
 
     def c_code_cache_version(self):
-        return (0, 1, 2)
+        return (0, 1, 2, 3)
 
 
 advanced_subtensor1 = AdvancedSubtensor1()
@@ -2522,6 +2525,9 @@ class AdvancedIncSubtensor1(COp):
         numpy_ver = [int(n) for n in np.__version__.split(".")[:2]]
         if bool(numpy_ver < [1, 8]):
             raise NotImplementedError
+        if bool(numpy_ver >= [2, 0]):
+            raise NotImplementedError
+
         x, y, idx = input_names
         out = output_names[0]
         copy_of_x = self.copy_of_x(x)

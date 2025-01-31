@@ -6,11 +6,27 @@ from itertools import pairwise
 from typing import cast
 
 import numpy as np
-from numpy.core.einsumfunc import _find_contraction, _parse_einsum_input  # type: ignore
-from numpy.core.numeric import (  # type: ignore
-    normalize_axis_index,
-    normalize_axis_tuple,
-)
+
+
+try:
+    from numpy._core.einsumfunc import (  # type: ignore
+        _find_contraction,
+        _parse_einsum_input,
+    )
+except ModuleNotFoundError as e:
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.einsumfunc import (  # type: ignore
+        _find_contraction,
+        _parse_einsum_input,
+    )
+
+try:
+    from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.multiarray import normalize_axis_index  # type: ignore
+    from numpy.core.numeric import normalize_axis_tuple  # type: ignore
 
 from pytensor.compile.builders import OpFromGraph
 from pytensor.tensor import TensorLike
@@ -255,7 +271,7 @@ def _general_dot(
 
     .. testoutput::
 
-        (3, 4, 2)
+        (np.int64(3), np.int64(4), np.int64(2))
     """
     # Shortcut for non batched case
     if not batch_axes[0] and not batch_axes[1]:

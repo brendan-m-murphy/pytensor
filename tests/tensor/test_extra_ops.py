@@ -469,7 +469,7 @@ class TestSqueeze(utt.InferShapeTester):
         assert squeeze(x, axis=(0,)).eval({x: 5}) == 5
 
         with pytest.raises(
-            np.AxisError,
+            np.exceptions.AxisError,
             match=re.escape("axis (1,) is out of bounds for array of dimension 0"),
         ):
             squeeze(x, axis=1)
@@ -694,7 +694,7 @@ class TestFillDiagonal(utt.InferShapeTester):
         y = scalar()
         f = function([x, y], fill_diagonal(x, y))
         a = rng.random(shp).astype(config.floatX)
-        val = np.cast[config.floatX](rng.random())
+        val = rng.random(dtype=config.floatX)
         out = f(a, val)
         # We can't use np.fill_diagonal as it is bugged.
         assert np.allclose(np.diag(out), val)
@@ -706,7 +706,7 @@ class TestFillDiagonal(utt.InferShapeTester):
         x = tensor3()
         y = scalar()
         f = function([x, y], fill_diagonal(x, y))
-        val = np.cast[config.floatX](rng.random() + 10)
+        val = rng.random(dtype=config.floatX) + 10
         out = f(a, val)
         # We can't use np.fill_diagonal as it is bugged.
         assert out[0, 0, 0] == val
@@ -768,7 +768,7 @@ class TestFillDiagonalOffset(utt.InferShapeTester):
 
         f = function([x, y, z], fill_diagonal_offset(x, y, z))
         a = rng.random(shp).astype(config.floatX)
-        val = np.cast[config.floatX](rng.random())
+        val = rng.random(dtype=config.floatX)
         out = f(a, val, test_offset)
         # We can't use np.fill_diagonal as it is bugged.
         assert np.allclose(np.diag(out, test_offset), val)
