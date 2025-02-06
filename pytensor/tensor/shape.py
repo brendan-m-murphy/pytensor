@@ -4,7 +4,13 @@ from textwrap import dedent
 from typing import cast
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple  # type: ignore
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_tuple
+except ModuleNotFoundError:
+    # numpy < 2.0
+    from numpy.core.numeric import normalize_axis_tuple  # type: ignore
 
 import pytensor
 from pytensor.gradient import DisconnectedType

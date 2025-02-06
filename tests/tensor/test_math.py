@@ -391,11 +391,20 @@ TestAbsBroadcast = makeBroadcastTester(
     grad=_grad_broadcast_unary_normal,
 )
 
+
+# in numpy >= 2.0, negating a uint raises an error
+neg_good = _good_broadcast_unary_normal.copy()
+if np.lib.NumpyVersion(np.__version__) >= "2.0.0rc1":
+    neg_bad = {"uint8": neg_good.pop("uint8"), "uint16": neg_good.pop("uint16")}
+else:
+    neg_bad = None
+
 TestNegBroadcast = makeBroadcastTester(
     op=neg,
     expected=lambda x: -x,
-    good=_good_broadcast_unary_normal,
+    good=neg_good,
     grad=_grad_broadcast_unary_normal,
+    bad_compile=neg_bad,
 )
 
 TestSgnBroadcast = makeBroadcastTester(
@@ -1393,18 +1402,47 @@ class TestMinMax:
         # check_grad_max(data, eval_outputs(grad(max_and_argmax(n,
         # axis=1)[0], n)),axis=1)
 
+    @pytest.mark.parametrize("dtype", ("uint8", "uint16", "uint32"))
+    def test_uint(self, dtype):
+        itype = np.iinfo(dtype)
+        data = np.array([itype.min + 3, itype.min, itype.max - 5, itype.max], dtype)
+        n = as_tensor_variable(data)
+
+        assert min(n).dtype == dtype
+        i_min = eval_outputs(min(n))
+        assert i_min == itype.min
+
+        assert max(n).dtype == dtype
+        i_max = eval_outputs(max(n))
+        assert i_max == itype.max
+
     @pytest.mark.xfail(reason="Fails due to #770")
-    def test_uint(self):
-        for dtype in ("uint8", "uint16", "uint32", "uint64"):
-            itype = np.iinfo(dtype)
-            data = np.array([itype.min + 3, itype.min, itype.max - 5, itype.max], dtype)
-            n = as_tensor_variable(data)
-            assert min(n).dtype == dtype
-            i = eval_outputs(min(n))
-            assert i == itype.min
-            assert max(n).dtype == dtype
-            i = eval_outputs(max(n))
-            assert i == itype.max
+    def test_uint64(self):
+        dtype = "uint64"
+        itype = np.iinfo(dtype)
+
+        data = np.array([itype.min + 3, itype.min, itype.max - 5, itype.max], dtype)
+        n = as_tensor_variable(data)
+
+        assert min(n).dtype == dtype
+        i_min = eval_outputs(min(n))
+        assert i_min == itype.min
+
+        assert max(n).dtype == dtype
+        i_max = eval_outputs(max(n))
+        assert i_max == itype.max
+
+        i_max = eval_outputs(max(n))
+        assert i_max == data.max()
+
+    @pytest.mark.xfail(reason="Fails due to #770")
+    def test_uint64_special_value(self):
+        dtype = "uint64"
+        data = np.array([0, 9223372036854775], dtype=dtype)
+        n = as_tensor_variable(data)
+
+        i_max = eval_outputs(max(n))
+        assert i_max == data.max()
 
     def test_bool(self):
         data = np.array([True, False], "bool")
@@ -2457,11 +2495,22 @@ class TestArithmeticCast:
         def numpy_i_scalar(dtype):
             return numpy_scalar(dtype)
 
+        pytensor_funcs = {
+            "scalar": pytensor_scalar,
+            "array": pytensor_array,
+            "i_scalar": pytensor_i_scalar,
+        }
+        numpy_funcs = {
+            "scalar": numpy_scalar,
+            "array": numpy_array,
+            "i_scalar": numpy_i_scalar,
+        }
+
         with config.change_flags(cast_policy="numpy+floatX"):
             # We will test all meaningful combinations of
             # scalar and array operations.
-            pytensor_args = [eval(f"pytensor_{c}") for c in combo]
-            numpy_args = [eval(f"numpy_{c}") for c in combo]
+            pytensor_args = [pytensor_funcs[c] for c in combo]
+            numpy_args = [numpy_funcs[c] for c in combo]
             pytensor_arg_1 = pytensor_args[0](a_type)
             pytensor_arg_2 = pytensor_args[1](b_type)
             pytensor_dtype = op(
@@ -3407,22 +3456,6 @@ class TestSumMeanMaxMinArgMaxVarReduceAxes:
             x = matrix()
             # TODO FIXME: This is a bad test
             x.var(a)
-
-
-def reduce_bitwise_and(x, axis=-1, dtype="int8"):
-    identity = np.array((-1,), dtype=dtype)[0]
-
-    shape_without_axis = tuple(s for i, s in enumerate(x.shape) if i != axis)
-    if 0 in shape_without_axis:
-        return np.empty(shape=shape_without_axis, dtype=x.dtype)
-
-    def custom_reduce(a):
-        out = identity
-        for i in range(a.size):
-            out = np.bitwise_and(a[i], out)
-        return out
-
-    return np.apply_along_axis(custom_reduce, axis, x)
 
 
 def test_clip_grad():

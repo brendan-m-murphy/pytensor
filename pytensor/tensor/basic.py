@@ -14,8 +14,17 @@ from typing import TYPE_CHECKING, Union
 from typing import cast as type_cast
 
 import numpy as np
-from numpy.core.multiarray import normalize_axis_index
-from numpy.core.numeric import normalize_axis_tuple
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_index, normalize_axis_tuple
+except ModuleNotFoundError:
+    # numpy < 2.0
+    from numpy.core.multiarray import normalize_axis_index
+    from numpy.core.numeric import normalize_axis_tuple
+
+
+from numpy.exceptions import AxisError
 
 import pytensor
 import pytensor.scalar.sharedvar
@@ -228,7 +237,7 @@ def constant(x, name=None, ndim=None, dtype=None) -> TensorConstant:
         elif x_.ndim > ndim:
             try:
                 x_ = np.squeeze(x_, axis=tuple(range(x_.ndim - ndim)))
-            except np.AxisError:
+            except AxisError:
                 raise ValueError(
                     f"ndarray could not be cast to constant with {int(ndim)} dimensions"
                 )
@@ -4406,7 +4415,7 @@ def expand_dims(a: np.ndarray | TensorVariable, axis: Sequence[int]) -> TensorVa
         axis = (axis,)
 
     out_ndim = len(axis) + a.ndim
-    axis = np.core.numeric.normalize_axis_tuple(axis, out_ndim)
+    axis = normalize_axis_tuple(axis, out_ndim)
 
     if not axis:
         return a

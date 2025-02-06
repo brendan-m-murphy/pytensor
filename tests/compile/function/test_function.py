@@ -26,6 +26,12 @@ from pytensor.tensor.type import (
 floatX = "float32"
 
 
+if np.lib.NumpyVersion(np.__version__) >= "2.0.0rc1":
+    uint_overflow_error = OverflowError
+else:
+    uint_overflow_error = TypeError
+
+
 def test_function_dump():
     v = vector()
     fct1 = function([v], v + 1)
@@ -166,12 +172,12 @@ class TestFunctionIn:
         # Value too big for a, silently ignored
         assert np.array_equal(f([2**20], np.ones(1, dtype="int8"), 1), [2])
 
-        # Value too big for b, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for b, raises OverflowError (in numpy >= 2.0... TypeError in numpy < 2.0)
+        with pytest.raises(uint_overflow_error):
             f([3], [312], 1)
 
-        # Value too big for c, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for c, raises OverflowError
+        with pytest.raises(uint_overflow_error):
             f([3], [6], 806)
 
     def test_in_allow_downcast_floatX(self):

@@ -34,6 +34,12 @@ def data_of(s):
     return s.container.storage[0]
 
 
+if np.lib.NumpyVersion(np.__version__) >= "2.0.0rc1":
+    uint_overflow_error = OverflowError
+else:
+    uint_overflow_error = TypeError
+
+
 class TestPfunc:
     def test_errors(self):
         a = lscalar()
@@ -237,12 +243,12 @@ class TestPfunc:
         # Value too big for a, silently ignored
         assert np.all(f([2**20], np.ones(1, dtype="int8"), 1) == 2)
 
-        # Value too big for b, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for b, raises OverflowError in numpy >= 2.0, TypeError in numpy <2.0
+        with pytest.raises(uint_overflow_error):
             f([3], [312], 1)
 
-        # Value too big for c, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for c, raises OverflowError in numpy >= 2.0, TypeError in numpy <2.0
+        with pytest.raises(uint_overflow_error):
             f([3], [6], 806)
 
     def test_param_allow_downcast_floatX(self):
@@ -327,16 +333,19 @@ class TestPfunc:
         with pytest.raises(TypeError):
             g([3], np.array([6], dtype="int16"), 0)
 
-        # Value too big for b, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for b, raises OverflowError in numpy >= 2.0, TypeError in numpy <2.0
+        with pytest.raises(uint_overflow_error):
             g([3], [312], 0)
 
         h = pfunc([a, b, c], (a + b + c))  # Default: allow_input_downcast=None
         # Everything here should behave like with False
         assert np.all(h([3], [6], 0) == 9)
+
         with pytest.raises(TypeError):
             h([3], np.array([6], dtype="int16"), 0)
-        with pytest.raises(TypeError):
+
+        # Value too big for b, raises OverflowError in numpy >= 2.0, TypeError in numpy <2.0
+        with pytest.raises(uint_overflow_error):
             h([3], [312], 0)
 
     def test_allow_downcast_floatX(self):
