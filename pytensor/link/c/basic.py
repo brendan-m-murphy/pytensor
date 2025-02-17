@@ -10,8 +10,6 @@ from copy import copy
 from io import StringIO
 from typing import TYPE_CHECKING, Any, Optional
 
-import numpy as np
-
 from pytensor.compile.compilelock import lock_ctx
 from pytensor.configdefaults import config
 from pytensor.graph.basic import (
@@ -33,6 +31,7 @@ from pytensor.link.c.cmodule import (
 from pytensor.link.c.cmodule import get_module_cache as _get_module_cache
 from pytensor.link.c.interface import CLinkerObject, CLinkerOp, CLinkerType
 from pytensor.link.utils import gc_helper, map_storage, raise_with_op, streamline
+from pytensor.npy_2_compat import ndarray_c_version
 from pytensor.utils import difference, uniq
 
 
@@ -875,10 +874,10 @@ class CLinker(Linker):
         self.c_init_code_apply = c_init_code_apply
 
         if (self.init_tasks, self.tasks) != self.get_init_tasks():
-            print("init_tasks\n", self.init_tasks, file=sys.stderr)
-            print(self.get_init_tasks()[0], file=sys.stderr)
-            print("tasks\n", self.tasks, file=sys.stderr)
-            print(self.get_init_tasks()[1], file=sys.stderr)
+            print("init_tasks\n", self.init_tasks, file=sys.stderr)  # noqa: T201
+            print(self.get_init_tasks()[0], file=sys.stderr)  # noqa: T201
+            print("tasks\n", self.tasks, file=sys.stderr)  # noqa: T201
+            print(self.get_init_tasks()[1], file=sys.stderr)  # noqa: T201
             assert (self.init_tasks, self.tasks) == self.get_init_tasks()
 
         # List of indices that should be ignored when passing the arguments
@@ -1367,10 +1366,6 @@ class CLinker(Linker):
 
         # We must always add the numpy ABI version here as
         # DynamicModule always add the include <numpy/arrayobject.h>
-        if np.lib.NumpyVersion(np.__version__) < "1.16.0a":
-            ndarray_c_version = np.core.multiarray._get_ndarray_c_version()
-        else:
-            ndarray_c_version = np.core._multiarray_umath._get_ndarray_c_version()
         sig.append(f"NPY_ABI_VERSION=0x{ndarray_c_version:X}")
         if c_compiler:
             sig.append("c_compiler_str=" + c_compiler.version_str())
@@ -1756,7 +1751,7 @@ class _CThunk:
                 exc_value = exc_type(_exc_value)
                 exc_value.__thunk_trace__ = trace
             except Exception:
-                print(
+                print(  # noqa: T201
                     (
                         "ERROR retrieving error_storage."
                         "Was the error set in the c code?"
@@ -1764,7 +1759,7 @@ class _CThunk:
                     end=" ",
                     file=sys.stderr,
                 )
-                print(self.error_storage, file=sys.stderr)
+                print(self.error_storage, file=sys.stderr)  # noqa: T201
                 raise
             raise exc_value.with_traceback(exc_trace)
 

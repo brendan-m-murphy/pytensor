@@ -12,7 +12,6 @@ Questions and notes about scan that should be answered :
 import os
 import pickle
 import shutil
-import sys
 from pathlib import Path
 from tempfile import mkdtemp
 
@@ -1923,7 +1922,8 @@ class TestScan:
         fgrad = function([], g_sh)
         assert fgrad() == 1
 
-    def test_R_op(self):
+    @pytest.mark.parametrize("use_op_rop_implementation", [True, False])
+    def test_R_op(self, use_op_rop_implementation):
         seed = utt.fetch_seed()
         rng = np.random.default_rng(seed)
         floatX = config.floatX
@@ -1958,9 +1958,9 @@ class TestScan:
         eh0 = vector("eh0")
         eW = matrix("eW")
 
-        nwo_u = Rop(o, _u, eu)
-        nwo_h0 = Rop(o, _h0, eh0)
-        nwo_W = Rop(o, _W, eW)
+        nwo_u = Rop(o, _u, eu, use_op_rop_implementation=use_op_rop_implementation)
+        nwo_h0 = Rop(o, _h0, eh0, use_op_rop_implementation=use_op_rop_implementation)
+        nwo_W = Rop(o, _W, eW, use_op_rop_implementation=use_op_rop_implementation)
         fn_rop = function(
             [u, h0, W, eu, eh0, eW], [nwo_u, nwo_h0, nwo_W], on_unused_input="ignore"
         )
@@ -1993,12 +1993,13 @@ class TestScan:
         vnu, vnh0, vnW = fn_rop(v_u, v_h0, v_W, v_eu, v_eh0, v_eW)
         tnu, tnh0, tnW = fn_test(v_u, v_h0, v_W, v_eu, v_eh0, v_eW)
 
-        utt.assert_allclose(vnu, tnu, atol=1e-6)
-        utt.assert_allclose(vnh0, tnh0, atol=1e-6)
-        utt.assert_allclose(vnW, tnW, atol=1e-6)
+        np.testing.assert_allclose(vnu, tnu, atol=1e-6)
+        np.testing.assert_allclose(vnh0, tnh0, atol=1e-6)
+        np.testing.assert_allclose(vnW, tnW, atol=1e-6)
 
     @pytest.mark.slow
-    def test_R_op_2(self):
+    @pytest.mark.parametrize("use_op_rop_implementation", [True, False])
+    def test_R_op_2(self, use_op_rop_implementation):
         seed = utt.fetch_seed()
         rng = np.random.default_rng(seed)
         floatX = config.floatX
@@ -2041,9 +2042,9 @@ class TestScan:
         eh0 = vector("eh0")
         eW = matrix("eW")
 
-        nwo_u = Rop(o, _u, eu)
-        nwo_h0 = Rop(o, _h0, eh0)
-        nwo_W = Rop(o, _W, eW)
+        nwo_u = Rop(o, _u, eu, use_op_rop_implementation=use_op_rop_implementation)
+        nwo_h0 = Rop(o, _h0, eh0, use_op_rop_implementation=use_op_rop_implementation)
+        nwo_W = Rop(o, _W, eW, use_op_rop_implementation=use_op_rop_implementation)
         fn_rop = function(
             [u, h0, W, eu, eh0, eW], [nwo_u, nwo_h0, nwo_W, o], on_unused_input="ignore"
         )
@@ -2075,11 +2076,12 @@ class TestScan:
         )
 
         tnu, tnh0, tnW, tno = fn_test(v_u, v_h0, v_W, v_eu, v_eh0, v_eW)
-        utt.assert_allclose(vnu, tnu, atol=1e-6)
-        utt.assert_allclose(vnh0, tnh0, atol=1e-6)
-        utt.assert_allclose(vnW, tnW, atol=2e-6)
+        np.testing.assert_allclose(vnu, tnu, atol=1e-6)
+        np.testing.assert_allclose(vnh0, tnh0, atol=1e-6)
+        np.testing.assert_allclose(vnW, tnW, atol=2e-6)
 
-    def test_R_op_mitmot(self):
+    @pytest.mark.parametrize("use_op_rop_implementation", [True, False])
+    def test_R_op_mitmot(self, use_op_rop_implementation):
         # this test is a copy paste from the script given by Justin Bayer to
         # reproduce this bug
         # We have 2 parameter groups with the following shapes.
@@ -2095,13 +2097,10 @@ class TestScan:
         W1 = pars[:3].reshape(W1shape)
         W2 = pars[3:].reshape(W2shape)
 
-        # Define recurrent model. We are using a model where each input is a
-        # tensor
-        # of shape (T, B, D) where T is the number of timesteps, B is the
-        # number of
-        # sequences iterated over in parallel and D is the dimensionality of
-        # each
-        # item at a timestep.
+        # Define recurrent model. We are using a model where each input
+        # is a tensor of shape (T, B, D) where T is the number of timesteps,
+        # B is the number of sequences iterated over in parallel and
+        # D is the dimensionality of each item at a timestep.
 
         inpt = tensor3("inpt")
         target = tensor3("target")
@@ -2129,7 +2128,130 @@ class TestScan:
         d_cost_wrt_pars = grad(cost, pars)
 
         p = dvector()
-        Rop(d_cost_wrt_pars, pars, p)
+        # TODO: We should test something about the Rop!
+        Rop(
+            d_cost_wrt_pars,
+            pars,
+            p,
+            use_op_rop_implementation=use_op_rop_implementation,
+        )
+
+    def test_second_derivative_disconnected_cost_with_mit_mot(self):
+        # This test is a regression test for a bug that was revealed
+        # when we computed the pushforward of a Scan gradient via two applications of pullback
+        seq = pt.vector("seq", shape=(2,))
+        z = pt.scalar("z")
+        x0 = pt.vector("x0", shape=(2,))
+
+        # When s is 1 and z is 2, xs[-1] is just a sneaky
+        # x ** 4 (after two nsteps)
+        # grad should be 4 * x ** 3
+        # and grad of grad should be 12 * x ** 2
+        def step(s, xtm2, xtm1, z):
+            return s * ((xtm2 * 0 + xtm1) ** 2) * (z / 2)
+
+        xs, _ = scan(
+            step,
+            sequences=[seq],
+            outputs_info=[{"initial": x0, "taps": (-2, -1)}],
+            non_sequences=[z],
+            n_steps=2,
+        )
+        last_x = xs[-1]
+
+        g_wrt_x0, g_wrt_z, g_wrt_seq = pt.grad(last_x, [x0, z, seq])
+        g = g_wrt_x0.sum() + g_wrt_z.sum() * 0 + g_wrt_seq.sum() * 0
+        assert g.eval({seq: [1, 1], x0: [1, 1], z: 2}) == 4
+        gg = pt.grad(g, wrt=x0).sum()
+        assert gg.eval({seq: [1, 1], x0: [1, 1], z: 2}) == 12
+        assert gg.eval({seq: [2, 2], x0: [1, 1], z: 2}) == 96
+
+        # Leave out z
+        g_wrt_x0, g_wrt_seq = pt.grad(last_x, [x0, seq])
+        g = g_wrt_x0.sum() + g_wrt_seq.sum() * 0
+        gg = pt.grad(g, wrt=x0).sum()
+        assert gg.eval({seq: [1, 1], x0: [1, 1], z: 2}) == 12
+        assert gg.eval({seq: [2, 2], x0: [1, 1], z: 2}) == 96
+
+        # Leave out seq
+        g_wrt_x0, g_wrt_z = pt.grad(last_x, [x0, z])
+        g = g_wrt_x0.sum() + g_wrt_z.sum() * 0
+        gg = pt.grad(g, wrt=x0).sum()
+        assert gg.eval({seq: [1, 1], x0: [1, 1], z: 2}) == 12
+        assert gg.eval({seq: [1, 1], x0: [1, 1], z: 1}) == 3 / 2
+
+        # Leave out z and seq
+        g_wrt_x0 = pt.grad(last_x, x0)
+        g = g_wrt_x0.sum()
+        gg = pt.grad(g, wrt=x0).sum()
+        assert gg.eval({seq: [1, 1], x0: [1, 1], z: 2}) == 12
+        assert gg.eval({seq: [1, 1], x0: [1, 1], z: 1}) == 3 / 2
+
+    @pytest.mark.parametrize("case", ("inside-explicit", "inside-implicit", "outside"))
+    def test_non_shaped_input_disconnected_gradient(self, case):
+        """Test that Scan gradient works when non shaped variables are disconnected from the gradient.
+
+        Regression test for https://github.com/pymc-devs/pytensor/issues/6
+        """
+
+        # In all cases rng is disconnected from the output gradient
+        # Note that when it is an input to the scan (explicit or not) it is still not updated by the scan,
+        # so it is equivalent to the `outside` case. A rewrite could have legally hoisted the rng out of the scan.
+        rng = shared(np.random.default_rng())
+
+        data = pt.zeros(16)
+
+        nonlocal_random_index = pt.random.integers(16, rng=rng)
+        nonlocal_random_datum = data[nonlocal_random_index]
+
+        if case == "outside":
+
+            def step(s, random_datum):
+                return (random_datum + s) ** 2
+
+            strict = True
+            non_sequences = [nonlocal_random_datum]
+
+        elif case == "inside-implicit":
+
+            def step(s):
+                return (nonlocal_random_datum + s) ** 2
+
+            strict = False
+            non_sequences = []  # Scan will introduce the non_sequences for us
+
+        elif case == "inside-explicit":
+
+            def step(s, data, rng):
+                random_index = pt.random.integers(
+                    16, rng=rng
+                )  # Not updated by the scan
+                random_datum = data[random_index]
+                return (random_datum + s) ** 2
+
+            strict = (True,)
+            non_sequences = [data, rng]
+
+        else:
+            raise ValueError(f"Invalid case: {case}")
+
+        seq = vector("seq")
+        xs, _ = scan(
+            step,
+            sequences=[seq],
+            non_sequences=non_sequences,
+            strict=strict,
+        )
+        x0 = xs[0]
+
+        np.testing.assert_allclose(
+            x0.eval({seq: [np.pi, np.nan, np.nan]}),
+            np.pi**2,
+        )
+        np.testing.assert_allclose(
+            grad(x0, seq)[0].eval({seq: [np.pi, np.nan, np.nan]}),
+            2 * np.pi,
+        )
 
 
 @pytest.mark.skipif(
@@ -3076,7 +3198,7 @@ class TestExamples:
 
         cost = result_outer[0][-1]
         H = hessian(cost, W)
-        print(".", file=sys.stderr)
+        # print(".", file=sys.stderr)
         f = function([W, n_steps], H)
         benchmark(f, np.ones((8,), dtype="float32"), 1)
 

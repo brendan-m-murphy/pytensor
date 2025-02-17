@@ -1,6 +1,6 @@
 import pickle
 import re
-from copy import copy
+from copy import deepcopy
 
 import numpy as np
 import pytest
@@ -19,6 +19,7 @@ from pytensor.graph.rewriting.db import RewriteDatabaseQuery
 from pytensor.tensor import ones, stack
 from pytensor.tensor.random.basic import (
     ChoiceWithoutReplacement,
+    MvNormalRV,
     PermutationRV,
     _gamma,
     bernoulli,
@@ -113,7 +114,9 @@ def compare_sample_values(rv, *params, rng=None, test_fn=None, **kwargs):
 
     pt_rng = shared(rng, borrow=True)
 
-    numpy_res = np.asarray(test_fn(*param_vals, random_state=copy(rng), **kwargs_vals))
+    numpy_res = np.asarray(
+        test_fn(*param_vals, random_state=deepcopy(rng), **kwargs_vals)
+    )
 
     pytensor_res = rv(*params, rng=pt_rng, **kwargs)
 
@@ -521,13 +524,19 @@ def test_pareto_samples(alpha, scale, size):
 
 
 def mvnormal_test_fn(mean=None, cov=None, size=None, random_state=None):
-    if mean is None:
-        mean = np.array([0.0], dtype=config.floatX)
-    if cov is None:
-        cov = np.array([[1.0]], dtype=config.floatX)
-    if size is not None:
-        size = tuple(size)
-    return multivariate_normal.rng_fn(random_state, mean, cov, size)
+    rng = random_state if random_state is not None else np.random.default_rng()
+
+    if size is None:
+        size = np.broadcast_shapes(mean.shape[:-1], cov.shape[:-2])
+
+    mean = np.broadcast_to(mean, (*size, *mean.shape[-1:]))
+    cov = np.broadcast_to(cov, (*size, *cov.shape[-2:]))
+
+    @np.vectorize(signature="(n),(n,n)->(n)")
+    def vec_mvnormal(mean, cov):
+        return rng.multivariate_normal(mean, cov, method="cholesky")
+
+    return vec_mvnormal(mean, cov)
 
 
 @pytest.mark.parametrize(
@@ -609,18 +618,30 @@ def mvnormal_test_fn(mean=None, cov=None, size=None, random_state=None):
         ),
     ],
 )
+@pytest.mark.skipif(
+    config.floatX == "float32",
+    reason="Draws are only strictly equal to numpy in float64",
+)
 def test_mvnormal_samples(mu, cov, size):
     compare_sample_values(
         multivariate_normal, mu, cov, size=size, test_fn=mvnormal_test_fn
     )
 
 
-def test_mvnormal_default_args():
-    compare_sample_values(multivariate_normal, test_fn=mvnormal_test_fn)
+def test_mvnormal_no_default_args():
+    with pytest.raises(
+        TypeError, match="missing 2 required positional arguments: 'mean' and 'cov'"
+    ):
+        multivariate_normal()
 
+
+def test_mvnormal_impl_catches_incompatible_size():
     with pytest.raises(ValueError, match="operands could not be broadcast together "):
         multivariate_normal.rng_fn(
-            None, np.zeros((3, 2)), np.ones((3, 2, 2)), size=(4,)
+            np.random.default_rng(),
+            np.zeros((3, 2)),
+            np.broadcast_to(np.eye(2), (3, 2, 2)),
+            size=(4,),
         )
 
 
@@ -666,6 +687,49 @@ def test_mvnormal_ShapeFeature():
     assert s2.get_test_value() == 3
     assert s3.get_test_value() == 2
     assert s4.get_test_value() == 3
+
+
+def create_mvnormal_cov_decomposition_method_test(mode):
+    @pytest.mark.parametrize("psd", (True, False))
+    @pytest.mark.parametrize("method", ("cholesky", "svd", "eigh"))
+    def test_mvnormal_cov_decomposition_method(method, psd):
+        mean = 2 ** np.arange(3)
+        if psd:
+            cov = [
+                [1, 0.5, -1],
+                [0.5, 2, 0],
+                [-1, 0, 3],
+            ]
+        else:
+            cov = [
+                [1, 0.5, 0],
+                [0.5, 2, 0],
+                [0, 0, 0],
+            ]
+        rng = shared(np.random.default_rng(675))
+        draws = MvNormalRV(method=method)(mean, cov, rng=rng, size=(10_000,))
+        assert draws.owner.op.method == method
+
+        # JAX doesn't raise errors at runtime
+        if not psd and method == "cholesky":
+            if mode == "JAX":
+                # JAX doesn't raise errors at runtime, instead it returns nan
+                np.isnan(draws.eval(mode=mode)).all()
+            else:
+                with pytest.raises(np.linalg.LinAlgError):
+                    draws.eval(mode=mode)
+
+        else:
+            draws_eval = draws.eval(mode=mode)
+            np.testing.assert_allclose(np.mean(draws_eval, axis=0), mean, rtol=0.02)
+            np.testing.assert_allclose(np.cov(draws_eval, rowvar=False), cov, atol=0.1)
+
+    return test_mvnormal_cov_decomposition_method
+
+
+test_mvnormal_cov_decomposition_method = create_mvnormal_cov_decomposition_method_test(
+    None
+)
 
 
 @pytest.mark.parametrize(

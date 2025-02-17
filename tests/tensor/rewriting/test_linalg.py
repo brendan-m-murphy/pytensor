@@ -14,7 +14,7 @@ from pytensor.graph.rewriting.utils import rewrite_graph
 from pytensor.tensor import swapaxes
 from pytensor.tensor.blockwise import Blockwise
 from pytensor.tensor.elemwise import DimShuffle
-from pytensor.tensor.math import _allclose, dot, matmul
+from pytensor.tensor.math import dot, matmul
 from pytensor.tensor.nlinalg import (
     SVD,
     Det,
@@ -42,17 +42,18 @@ from tests import unittest_tools as utt
 from tests.test_rop import break_op
 
 
-ATOL = RTOL = 1e-3 if config.floatX == "float32" else 1e-8
-
-
-def test_rop_lop():
+def test_matrix_inverse_rop_lop():
+    rtol = 1e-7 if config.floatX == "float64" else 1e-5
     mx = matrix("mx")
     mv = matrix("mv")
     v = vector("v")
     y = MatrixInverse()(mx).sum(axis=0)
 
-    yv = pytensor.gradient.Rop(y, mx, mv)
+    yv = pytensor.gradient.Rop(y, mx, mv, use_op_rop_implementation=True)
     rop_f = function([mx, mv], yv)
+
+    yv_via_lop = pytensor.gradient.Rop(y, mx, mv, use_op_rop_implementation=False)
+    rop_via_lop_f = function([mx, mv], yv_via_lop)
 
     sy, _ = pytensor.scan(
         lambda i, y, x, v: (pytensor.gradient.grad(y[i], x) * v).sum(),
@@ -65,22 +66,16 @@ def test_rop_lop():
     vx = np.asarray(rng.standard_normal((4, 4)), pytensor.config.floatX)
     vv = np.asarray(rng.standard_normal((4, 4)), pytensor.config.floatX)
 
-    v1 = rop_f(vx, vv)
-    v2 = scan_f(vx, vv)
+    v_ref = scan_f(vx, vv)
+    np.testing.assert_allclose(rop_f(vx, vv), v_ref, rtol=rtol)
+    np.testing.assert_allclose(rop_via_lop_f(vx, vv), v_ref, rtol=rtol)
 
-    assert _allclose(v1, v2), f"ROP mismatch: {v1} {v2}"
-
-    raised = False
-    try:
+    with pytest.raises(ValueError):
         pytensor.gradient.Rop(
-            pytensor.clone_replace(y, replace={mx: break_op(mx)}), mx, mv
-        )
-    except ValueError:
-        raised = True
-    if not raised:
-        raise Exception(
-            "Op did not raised an error even though the function"
-            " is not differentiable"
+            pytensor.clone_replace(y, replace={mx: break_op(mx)}),
+            mx,
+            mv,
+            use_op_rop_implementation=True,
         )
 
     vv = np.asarray(rng.uniform(size=(4,)), pytensor.config.floatX)
@@ -90,9 +85,9 @@ def test_rop_lop():
     sy = pytensor.gradient.grad((v * y).sum(), mx)
     scan_f = function([mx, v], sy)
 
-    v1 = lop_f(vx, vv)
-    v2 = scan_f(vx, vv)
-    assert _allclose(v1, v2), f"LOP mismatch: {v1} {v2}"
+    v_ref = scan_f(vx, vv)
+    v = lop_f(vx, vv)
+    np.testing.assert_allclose(v, v_ref, rtol=rtol)
 
 
 def test_transinv_to_invtrans():
@@ -630,11 +625,12 @@ def test_inv_diag_from_eye_mul(shape, inv_op):
     inverse_matrix = np.linalg.inv(x_test_matrix)
     rewritten_inverse = f_rewritten(x_test)
 
+    atol = rtol = 1e-3 if config.floatX == "float32" else 1e-8
     assert_allclose(
         inverse_matrix,
         rewritten_inverse,
-        atol=ATOL,
-        rtol=RTOL,
+        atol=atol,
+        rtol=rtol,
     )
 
 
@@ -657,11 +653,12 @@ def test_inv_diag_from_diag(inv_op):
     inverse_matrix = np.linalg.inv(x_test_matrix)
     rewritten_inverse = f_rewritten(x_test)
 
+    atol = rtol = 1e-3 if config.floatX == "float32" else 1e-8
     assert_allclose(
         inverse_matrix,
         rewritten_inverse,
-        atol=ATOL,
-        rtol=RTOL,
+        atol=atol,
+        rtol=rtol,
     )
 
 

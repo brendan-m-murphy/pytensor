@@ -4,7 +4,6 @@ from textwrap import dedent
 from typing import Literal
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple
 
 import pytensor.tensor.basic
 from pytensor.configdefaults import config
@@ -17,6 +16,7 @@ from pytensor.link.c.basic import failure_code
 from pytensor.link.c.op import COp, ExternalCOp, OpenMPOp
 from pytensor.link.c.params_type import ParamsType
 from pytensor.misc.frozendict import frozendict
+from pytensor.npy_2_compat import normalize_axis_tuple
 from pytensor.printing import Printer, pprint
 from pytensor.scalar import get_scalar_type
 from pytensor.scalar.basic import bool as scalar_bool
@@ -39,9 +39,6 @@ from pytensor.tensor.utils import (
 )
 from pytensor.tensor.variable import TensorVariable
 from pytensor.utils import uniq
-
-
-_numpy_ver = [int(n) for n in np.__version__.split(".")[:2]]
 
 
 class DimShuffle(ExternalCOp):
@@ -166,15 +163,20 @@ class DimShuffle(ExternalCOp):
         self.transposition = self.shuffle + drop
         # List of dimensions of the output that are broadcastable and were not
         # in the original input
-        self.augment = sorted(i for i, x in enumerate(new_order) if x == "x")
+        self.augment = augment = sorted(i for i, x in enumerate(new_order) if x == "x")
         self.drop = drop
 
-        self.is_left_expand_dims = self.augment and (
+        dims_are_shuffled = sorted(self.shuffle) != self.shuffle
+
+        self.is_transpose = dims_are_shuffled and not augment and not drop
+        self.is_squeeze = drop and not dims_are_shuffled and not augment
+        self.is_expand_dims = augment and not dims_are_shuffled and not drop
+        self.is_left_expand_dims = self.is_expand_dims and (
             input_ndim == 0 or new_order[-input_ndim:] == list(range(input_ndim))
         )
-        self.is_right_expand_dims = self.augment and new_order[:input_ndim] == list(
-            range(input_ndim)
-        )
+        self.is_right_expand_dims = self.is_expand_dims and new_order[
+            :input_ndim
+        ] == list(range(input_ndim))
 
         if self.inplace:
             self.view_map = {0: [0]}
@@ -215,16 +217,15 @@ class DimShuffle(ExternalCOp):
         return Apply(self, [input], [output])
 
     def __str__(self):
-        shuffle = sorted(self.shuffle) != self.shuffle
-        if self.augment and not (shuffle or self.drop):
+        if self.is_expand_dims:
             if len(self.augment) == 1:
                 return f"ExpandDims{{axis={self.augment[0]}}}"
             return f"ExpandDims{{axes={self.augment}}}"
-        if self.drop and not (self.augment or shuffle):
+        if self.is_squeeze:
             if len(self.drop) == 1:
-                return f"DropDims{{axis={self.drop[0]}}}"
-            return f"DropDims{{axes={self.drop}}}"
-        if shuffle and not (self.augment or self.drop):
+                return f"Squeeze{{axis={self.drop[0]}}}"
+            return f"Squeeze{{axes={self.drop}}}"
+        if self.is_transpose:
             return f"Transpose{{axes={self.shuffle}}}"
         return f"DimShuffle{{order=[{','.join(map(str, self.new_order))}]}}"
 
@@ -667,7 +668,7 @@ class Elemwise(OpenMPOp):
             and isinstance(self.nfunc, np.ufunc)
             and node.inputs[0].dtype in discrete_dtypes
         ):
-            char = np.sctype2char(out_dtype)
+            char = np.dtype(out_dtype).char
             sig = char * node.nin + "->" + char * node.nout
             node.tag.sig = sig
         node.tag.fake_node = Apply(

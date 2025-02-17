@@ -18,6 +18,7 @@ from tests.tensor.random.test_basic import (
     batched_permutation_tester,
     batched_unweighted_choice_without_replacement_tester,
     batched_weighted_choice_without_replacement_tester,
+    create_mvnormal_cov_decomposition_method_test,
 )
 
 
@@ -62,7 +63,9 @@ def test_random_updates(rng_ctor):
     assert all(
         a == b if not isinstance(a, np.ndarray) else np.array_equal(a, b)
         for a, b in zip(
-            rng.get_value().__getstate__(), original_value.__getstate__(), strict=True
+            rng.get_value().bit_generator.state,
+            original_value.bit_generator.state,
+            strict=True,
         )
     )
 
@@ -545,6 +548,11 @@ def test_random_mvnormal():
     g_fn = compile_random_function([], g, mode=jax_mode)
     samples = g_fn()
     np.testing.assert_allclose(samples.mean(axis=0), mu, atol=0.1)
+
+
+test_mvnormal_cov_decomposition_method = create_mvnormal_cov_decomposition_method_test(
+    "JAX"
+)
 
 
 @pytest.mark.parametrize(

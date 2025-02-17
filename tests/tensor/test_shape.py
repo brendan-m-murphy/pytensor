@@ -98,6 +98,7 @@ class TestReshape(utt.InferShapeTester, utt.OptimizationTestMixin):
             Shape_i,
             DimShuffle,
             Elemwise,
+            SpecifyShape,
         )
         super().setup_method()
 
@@ -253,9 +254,7 @@ class TestReshape(utt.InferShapeTester, utt.OptimizationTestMixin):
             f(a_val, [7, 5])
         with pytest.raises(ValueError):
             f(a_val, [-1, -1])
-        with pytest.raises(
-            ValueError, match=".*Shape argument to Reshape has incorrect length.*"
-        ):
+        with pytest.raises(AssertionError):
             f(a_val, [3, 4, 1])
 
     def test_0(self):
@@ -603,7 +602,7 @@ class TestSpecifyBroadcastable:
 
 class TestRopLop(RopLopChecker):
     def test_shape(self):
-        self.check_nondiff_rop(self.x.shape[0])
+        self.check_nondiff_rop(self.x.shape[0], self.x, self.v)
 
     def test_specifyshape(self):
         self.check_rop_lop(specify_shape(self.x, self.in_shape), self.in_shape)
@@ -797,7 +796,6 @@ class TestVectorize:
         assert equal_computations([vect_out], [reshape(mat, new_shape)])
 
         new_shape = stack([[-1, x], [x - 1, -1]], axis=0)
-        print(new_shape.type)
         [vect_out] = vectorize_node(node, vec, new_shape).outputs
         vec_test_value = np.arange(6)
         np.testing.assert_allclose(

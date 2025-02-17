@@ -6,13 +6,14 @@ from itertools import pairwise
 from typing import cast
 
 import numpy as np
-from numpy.core.einsumfunc import _find_contraction, _parse_einsum_input  # type: ignore
-from numpy.core.numeric import (  # type: ignore
+
+from pytensor.compile.builders import OpFromGraph
+from pytensor.npy_2_compat import (
+    _find_contraction,
+    _parse_einsum_input,
     normalize_axis_index,
     normalize_axis_tuple,
 )
-
-from pytensor.compile.builders import OpFromGraph
 from pytensor.tensor import TensorLike
 from pytensor.tensor.basic import (
     arange,
@@ -255,7 +256,7 @@ def _general_dot(
 
     .. testoutput::
 
-        (3, 4, 2)
+        (np.int64(3), np.int64(4), np.int64(2))
     """
     # Shortcut for non batched case
     if not batch_axes[0] and not batch_axes[1]:

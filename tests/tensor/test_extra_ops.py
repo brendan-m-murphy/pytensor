@@ -9,6 +9,7 @@ from pytensor import tensor as pt
 from pytensor.compile.mode import Mode
 from pytensor.configdefaults import config
 from pytensor.graph.basic import Constant, applys_between, equal_computations
+from pytensor.npy_2_compat import old_np_unique
 from pytensor.raise_op import Assert
 from pytensor.tensor import alloc
 from pytensor.tensor.elemwise import DimShuffle
@@ -469,7 +470,7 @@ class TestSqueeze(utt.InferShapeTester):
         assert squeeze(x, axis=(0,)).eval({x: 5}) == 5
 
         with pytest.raises(
-            np.AxisError,
+            np.exceptions.AxisError,
             match=re.escape("axis (1,) is out of bounds for array of dimension 0"),
         ):
             squeeze(x, axis=1)
@@ -595,7 +596,6 @@ class TestRepeat(utt.InferShapeTester):
                     isinstance(n.op, Repeat) for n in f.maker.fgraph.toposort()
                 )
 
-    @pytest.mark.slow
     @pytest.mark.parametrize("ndim", [1, 3])
     @pytest.mark.parametrize("dtype", ["int8", "uint8", "uint64"])
     def test_infer_shape(self, ndim, dtype):
@@ -606,6 +606,10 @@ class TestRepeat(utt.InferShapeTester):
         a = rng.random(shp).astype(config.floatX)
 
         for axis in self._possible_axis(ndim):
+            if axis is not None and axis < 0:
+                # Operator does not support negative axis
+                continue
+
             r_var = scalar(dtype=dtype)
             r = np.asarray(3, dtype=dtype)
             if dtype in self.numpy_unsupported_dtypes:
@@ -635,12 +639,23 @@ class TestRepeat(utt.InferShapeTester):
                     self.op_class,
                 )
 
-    @pytest.mark.parametrize("ndim", range(3))
-    def test_grad(self, ndim):
-        a = np.random.random((10,) * ndim).astype(config.floatX)
-
-        for axis in self._possible_axis(ndim):
-            utt.verify_grad(lambda x: Repeat(axis=axis)(x, 3), [a])
+    @pytest.mark.parametrize("x_ndim", [2, 3], ids=lambda x: f"x_ndim={x}")
+    @pytest.mark.parametrize("repeats_ndim", [0, 1], ids=lambda r: f"repeats_ndim={r}")
+    @pytest.mark.parametrize("axis", [None, 0, 1], ids=lambda a: f"axis={a}")
+    def test_grad(self, x_ndim, repeats_ndim, axis):
+        rng = np.random.default_rng(
+            [653, x_ndim, 2 if axis is None else axis, repeats_ndim]
+        )
+        x_test = rng.normal(size=np.arange(3, 3 + x_ndim))
+        if repeats_ndim == 0:
+            repeats_size = ()
+        else:
+            repeats_size = (x_test.shape[axis] if axis is not None else x_test.size,)
+        repeats = rng.integers(1, 6, size=repeats_size)
+        utt.verify_grad(
+            lambda x: Repeat(axis=axis)(x, repeats),
+            [x_test],
+        )
 
     def test_broadcastable(self):
         x = TensorType(config.floatX, shape=(None, 1, None))()
@@ -694,7 +709,7 @@ class TestFillDiagonal(utt.InferShapeTester):
         y = scalar()
         f = function([x, y], fill_diagonal(x, y))
         a = rng.random(shp).astype(config.floatX)
-        val = np.cast[config.floatX](rng.random())
+        val = rng.random(dtype=config.floatX)
         out = f(a, val)
         # We can't use np.fill_diagonal as it is bugged.
         assert np.allclose(np.diag(out), val)
@@ -706,7 +721,7 @@ class TestFillDiagonal(utt.InferShapeTester):
         x = tensor3()
         y = scalar()
         f = function([x, y], fill_diagonal(x, y))
-        val = np.cast[config.floatX](rng.random() + 10)
+        val = rng.random(dtype=config.floatX) + 10
         out = f(a, val)
         # We can't use np.fill_diagonal as it is bugged.
         assert out[0, 0, 0] == val
@@ -768,7 +783,7 @@ class TestFillDiagonalOffset(utt.InferShapeTester):
 
         f = function([x, y, z], fill_diagonal_offset(x, y, z))
         a = rng.random(shp).astype(config.floatX)
-        val = np.cast[config.floatX](rng.random())
+        val = rng.random(dtype=config.floatX)
         out = f(a, val, test_offset)
         # We can't use np.fill_diagonal as it is bugged.
         assert np.allclose(np.diag(out, test_offset), val)
@@ -885,14 +900,14 @@ class TestUnique(utt.InferShapeTester):
     )
     def test_basic_vector(self, x, inp, axis):
         list_outs_expected = [
-            np.unique(inp, axis=axis),
-            np.unique(inp, True, axis=axis),
-            np.unique(inp, False, True, axis=axis),
-            np.unique(inp, True, True, axis=axis),
-            np.unique(inp, False, False, True, axis=axis),
-            np.unique(inp, True, False, True, axis=axis),
-            np.unique(inp, False, True, True, axis=axis),
-            np.unique(inp, True, True, True, axis=axis),
+            old_np_unique(inp, axis=axis),
+            old_np_unique(inp, True, axis=axis),
+            old_np_unique(inp, False, True, axis=axis),
+            old_np_unique(inp, True, True, axis=axis),
+            old_np_unique(inp, False, False, True, axis=axis),
+            old_np_unique(inp, True, False, True, axis=axis),
+            old_np_unique(inp, False, True, True, axis=axis),
+            old_np_unique(inp, True, True, True, axis=axis),
         ]
         for params, outs_expected in zip(
             self.op_params, list_outs_expected, strict=True

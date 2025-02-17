@@ -36,7 +36,6 @@ from pytensor.printing import pprint
 from pytensor.utils import (
     apply_across_args,
     difference,
-    from_return_values,
     to_return_values,
 )
 
@@ -184,7 +183,9 @@ class NumpyAutocaster:
 
         for dtype in try_dtypes:
             x_ = np.asarray(x).astype(dtype=dtype)
-            if np.all(x == x_):
+            if np.all(
+                np.asarray(x) == x_
+            ):  # use np.asarray(x) to match TensorType.filter
                 break
         # returns either an exact x_==x, or the last cast x_
         return x_
@@ -350,6 +351,8 @@ class ScalarType(CType, HasDataType, HasShape):
         # we declare them here and they will be re-used by TensorType
         l.append("<numpy/arrayobject.h>")
         l.append("<numpy/arrayscalars.h>")
+        l.append("<numpy/npy_math.h>")
+
         if config.lib__amdlibm and c_compiler.supports_amdlibm:
             l += ["<amdlibm.h>"]
         return l
@@ -518,73 +521,167 @@ class ScalarType(CType, HasDataType, HasShape):
                 # In that case we add the 'int' type to the real types.
                 real_types.append("int")
 
+            # Macros for backwards compatibility with numpy < 2.0
+            #
+            # In numpy 2.0+, these are defined in npy_math.h, but
+            # for early versions, they must be vendored by users (e.g. PyTensor)
+            backwards_compat_macros = """
+            #ifndef NUMPY_CORE_INCLUDE_NUMPY_NPY_2_COMPLEXCOMPAT_H_
+            #define NUMPY_CORE_INCLUDE_NUMPY_NPY_2_COMPLEXCOMPAT_H_
+
+            #include <numpy/npy_math.h>
+
+            #ifndef NPY_CSETREALF
+            #define NPY_CSETREALF(c, r) (c)->real = (r)
+            #endif
+            #ifndef NPY_CSETIMAGF
+            #define NPY_CSETIMAGF(c, i) (c)->imag = (i)
+            #endif
+            #ifndef NPY_CSETREAL
+            #define NPY_CSETREAL(c, r)  (c)->real = (r)
+            #endif
+            #ifndef NPY_CSETIMAG
+            #define NPY_CSETIMAG(c, i)  (c)->imag = (i)
+            #endif
+            #ifndef NPY_CSETREALL
+            #define NPY_CSETREALL(c, r) (c)->real = (r)
+            #endif
+            #ifndef NPY_CSETIMAGL
+            #define NPY_CSETIMAGL(c, i) (c)->imag = (i)
+            #endif
+
+            #endif
+            """
+
+            def _make_get_set_real_imag(scalar_type: str) -> str:
+                """Make overloaded getter/setter functions for real/imag parts of numpy complex types.
+
+                The functions called by these getter/setter functions are defining in npy_math.h, or
+                in the `backward_compat_macros` defined above.
+
+                Args:
+                    scalar_type: float, double, or longdouble
+
+                Returns:
+                    C++ code for defining set_real, set_imag, get_real, and get_imag, overloaded for the
+                    given type.
+                """
+                complex_type = "npy_c" + scalar_type
+                suffix = "" if scalar_type == "double" else scalar_type[0]
+
+                if scalar_type == "longdouble":
+                    scalar_type = "npy_" + scalar_type
+
+                return_type = scalar_type
+
+                template = f"""
+                static inline {return_type} get_real(const {complex_type} z)
+                {{
+                    return npy_creal{suffix}(z);
+                }}
+
+                static inline void set_real({complex_type} *z, const {scalar_type} r)
+                {{
+                    NPY_CSETREAL{suffix.upper()}(z, r);
+                }}
+
+                static inline {return_type} get_imag(const {complex_type} z)
+                {{
+                    return npy_cimag{suffix}(z);
+                }}
+
+                static inline void set_imag({complex_type} *z, const {scalar_type} i)
+                {{
+                    NPY_CSETIMAG{suffix.upper()}(z, i);
+                }}
+                """
+                return template
+
+            get_set_aliases = "\n".join(
+                _make_get_set_real_imag(stype)
+                for stype in ["float", "double", "longdouble"]
+            )
+
+            get_set_aliases = backwards_compat_macros + "\n" + get_set_aliases
+
+            # Template for defining pytensor_complex64 and pytensor_complex128 structs/classes
+            #
+            # The npy_complex64, npy_complex128 types are aliases defined at run time based on
+            # the size of floats and doubles on the machine. This means that both types are
+            # not necessarily defined on every machine, but a machine with 32-bit floats and
+            # 64-bit doubles will have npy_complex64 as an alias of npy_cfloat and npy_complex128
+            # as an alias of npy_complex128.
+            #
+            # In any case, the get/set real/imag functions defined above will always work for
+            # npy_complex64 and npy_complex128.
             template = """
-            struct pytensor_complex%(nbits)s : public npy_complex%(nbits)s
-            {
-                typedef pytensor_complex%(nbits)s complex_type;
-                typedef npy_float%(half_nbits)s scalar_type;
+            struct pytensor_complex%(nbits)s : public npy_complex%(nbits)s {
+              typedef pytensor_complex%(nbits)s complex_type;
+              typedef npy_float%(half_nbits)s scalar_type;
 
-                complex_type operator +(const complex_type &y) const {
-                    complex_type ret;
-                    ret.real = this->real + y.real;
-                    ret.imag = this->imag + y.imag;
-                    return ret;
-                }
+              complex_type operator+(const complex_type &y) const {
+                complex_type ret;
+                set_real(&ret, get_real(*this) + get_real(y));
+                set_imag(&ret, get_imag(*this) + get_imag(y));
+                return ret;
+              }
 
-                complex_type operator -() const {
-                    complex_type ret;
-                    ret.real = -this->real;
-                    ret.imag = -this->imag;
-                    return ret;
-                }
-                bool operator ==(const complex_type &y) const {
-                    return (this->real == y.real) && (this->imag == y.imag);
-                }
-                bool operator ==(const scalar_type &y) const {
-                    return (this->real == y) && (this->imag == 0);
-                }
-                complex_type operator -(const complex_type &y) const {
-                    complex_type ret;
-                    ret.real = this->real - y.real;
-                    ret.imag = this->imag - y.imag;
-                    return ret;
-                }
-                complex_type operator *(const complex_type &y) const {
-                    complex_type ret;
-                    ret.real = this->real * y.real - this->imag * y.imag;
-                    ret.imag = this->real * y.imag + this->imag * y.real;
-                    return ret;
-                }
-                complex_type operator /(const complex_type &y) const {
-                    complex_type ret;
-                    scalar_type y_norm_square = y.real * y.real + y.imag * y.imag;
-                    ret.real = (this->real * y.real + this->imag * y.imag) / y_norm_square;
-                    ret.imag = (this->imag * y.real - this->real * y.imag) / y_norm_square;
-                    return ret;
-                }
-                template <typename T>
-                complex_type& operator =(const T& y);
+              complex_type operator-() const {
+                complex_type ret;
+                set_real(&ret, -get_real(*this));
+                set_imag(&ret, -get_imag(*this));
+                return ret;
+              }
+              bool operator==(const complex_type &y) const {
+                return (get_real(*this) == get_real(y)) && (get_imag(*this) == get_imag(y));
+              }
+              bool operator==(const scalar_type &y) const {
+                return (get_real(*this) == y) && (get_real(*this) == 0);
+              }
+              complex_type operator-(const complex_type &y) const {
+                complex_type ret;
+                set_real(&ret, get_real(*this) - get_real(y));
+                set_imag(&ret, get_imag(*this) - get_imag(y));
+                return ret;
+              }
+              complex_type operator*(const complex_type &y) const {
+                complex_type ret;
+                set_real(&ret, get_real(*this) * get_real(y) - get_imag(*this) * get_imag(y));
+                set_imag(&ret, get_imag(*this) * get_real(y) + get_real(*this) * get_imag(y));
+                return ret;
+              }
+              complex_type operator/(const complex_type &y) const {
+                complex_type ret;
+                scalar_type y_norm_square = get_real(y) * get_real(y) + get_imag(y) * get_imag(y);
+                set_real(&ret, (get_real(*this) * get_real(y) + get_imag(*this) * get_imag(y)) / y_norm_square);
+                set_imag(&ret, (get_imag(*this) * get_real(y) - get_real(*this) * get_imag(y)) / y_norm_square);
+                return ret;
+              }
+              template <typename T> complex_type &operator=(const T &y);
 
-                pytensor_complex%(nbits)s() {}
 
-                template <typename T>
-                pytensor_complex%(nbits)s(const T& y) { *this = y; }
+              pytensor_complex%(nbits)s() {}
 
-                template <typename TR, typename TI>
-                pytensor_complex%(nbits)s(const TR& r, const TI& i) { this->real=r; this->imag=i; }
+              template <typename T> pytensor_complex%(nbits)s(const T &y) { *this = y; }
+
+              template <typename TR, typename TI>
+              pytensor_complex%(nbits)s(const TR &r, const TI &i) {
+                set_real(this, r);
+                set_imag(this, i);
+              }
             };
             """
 
             def operator_eq_real(mytype, othertype):
                 return f"""
                 template <> {mytype} & {mytype}::operator=<{othertype}>(const {othertype} & y)
-                {{ this->real=y; this->imag=0; return *this; }}
+                {{ set_real(this, y); set_imag(this, 0); return *this; }}
                 """
 
             def operator_eq_cplx(mytype, othertype):
                 return f"""
                 template <> {mytype} & {mytype}::operator=<{othertype}>(const {othertype} & y)
-                {{ this->real=y.real; this->imag=y.imag; return *this; }}
+                {{ set_real(this, get_real(y)); set_imag(this, get_imag(y)); return *this; }}
                 """
 
             operator_eq = "".join(
@@ -606,10 +703,10 @@ class ScalarType(CType, HasDataType, HasShape):
             def operator_plus_real(mytype, othertype):
                 return f"""
                 const {mytype} operator+(const {mytype} &x, const {othertype} &y)
-                {{ return {mytype}(x.real+y, x.imag); }}
+                {{ return {mytype}(get_real(x) + y, get_imag(x)); }}
 
                 const {mytype} operator+(const {othertype} &y, const {mytype} &x)
-                {{ return {mytype}(x.real+y, x.imag); }}
+                {{ return {mytype}(get_real(x) + y, get_imag(x)); }}
                 """
 
             operator_plus = "".join(
@@ -621,10 +718,10 @@ class ScalarType(CType, HasDataType, HasShape):
             def operator_minus_real(mytype, othertype):
                 return f"""
                 const {mytype} operator-(const {mytype} &x, const {othertype} &y)
-                {{ return {mytype}(x.real-y, x.imag); }}
+                {{ return {mytype}(get_real(x) - y, get_imag(x)); }}
 
                 const {mytype} operator-(const {othertype} &y, const {mytype} &x)
-                {{ return {mytype}(y-x.real, -x.imag); }}
+                {{ return {mytype}(y - get_real(x), -get_imag(x)); }}
                 """
 
             operator_minus = "".join(
@@ -636,10 +733,10 @@ class ScalarType(CType, HasDataType, HasShape):
             def operator_mul_real(mytype, othertype):
                 return f"""
                 const {mytype} operator*(const {mytype} &x, const {othertype} &y)
-                {{ return {mytype}(x.real*y, x.imag*y); }}
+                {{ return {mytype}(get_real(x) * y, get_imag(x) * y); }}
 
                 const {mytype} operator*(const {othertype} &y, const {mytype} &x)
-                {{ return {mytype}(x.real*y, x.imag*y); }}
+                {{ return {mytype}(get_real(x) * y, get_imag(x) * y); }}
                 """
 
             operator_mul = "".join(
@@ -649,7 +746,8 @@ class ScalarType(CType, HasDataType, HasShape):
             )
 
             return (
-                template % dict(nbits=64, half_nbits=32)
+                get_set_aliases
+                + template % dict(nbits=64, half_nbits=32)
                 + template % dict(nbits=128, half_nbits=64)
                 + operator_eq
                 + operator_plus
@@ -664,7 +762,7 @@ class ScalarType(CType, HasDataType, HasShape):
         return ["import_array();"]
 
     def c_code_cache_version(self):
-        return (13, np.__version__)
+        return (14, np.__version__)
 
     def get_shape_info(self, obj):
         return obj.itemsize
@@ -1081,6 +1179,16 @@ def real_out(type):
     return (type,)
 
 
+def _cast_to_promised_scalar_dtype(x, dtype):
+    try:
+        return x.astype(dtype)
+    except AttributeError:
+        if dtype == "bool":
+            return np.bool_(x)
+        else:
+            return getattr(np, dtype)(x)
+
+
 class ScalarOp(COp):
     nin = -1
     nout = 1
@@ -1134,28 +1242,18 @@ class ScalarOp(COp):
         else:
             raise NotImplementedError(f"Cannot calculate the output types for {self}")
 
-    @staticmethod
-    def _cast_scalar(x, dtype):
-        if hasattr(x, "astype"):
-            return x.astype(dtype)
-        elif dtype == "bool":
-            return np.bool_(x)
-        else:
-            return getattr(np, dtype)(x)
-
     def perform(self, node, inputs, output_storage):
         if self.nout == 1:
-            dtype = node.outputs[0].dtype
-            output_storage[0][0] = self._cast_scalar(self.impl(*inputs), dtype)
+            output_storage[0][0] = _cast_to_promised_scalar_dtype(
+                self.impl(*inputs),
+                node.outputs[0].dtype,
+            )
         else:
-            variables = from_return_values(self.impl(*inputs))
-            assert len(variables) == len(output_storage)
             # strict=False because we are in a hot loop
             for out, storage, variable in zip(
-                node.outputs, output_storage, variables, strict=False
+                node.outputs, output_storage, self.impl(*inputs), strict=False
             ):
-                dtype = out.dtype
-                storage[0] = self._cast_scalar(variable, dtype)
+                storage[0] = _cast_to_promised_scalar_dtype(variable, out.dtype)
 
     def impl(self, *inputs):
         raise MethodNotDefined("impl", type(self), self.__class__.__name__)
@@ -2568,7 +2666,7 @@ class Abs(UnaryScalarOp):
         if type in float_types:
             return f"{z} = fabs({x});"
         if type in complex_types:
-            return f"{z} = sqrt({x}.real*{x}.real + {x}.imag*{x}.imag);"
+            return f"{z} = sqrt(get_real({x}) * get_real({x}) + get_imag({x}) * get_imag({x}));"
         if node.outputs[0].type == bool:
             return f"{z} = ({x}) ? 1 : 0;"
         if type in uint_types:
@@ -2967,7 +3065,7 @@ class Log2(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz / (x * np.asarray(math.log(2.0)).astype(x.dtype)),)
+        return (gz / (x * np.array(math.log(2.0), dtype=x.dtype)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3010,7 +3108,7 @@ class Log10(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz / (x * np.asarray(math.log(10.0)).astype(x.dtype)),)
+        return (gz / (x * np.array(math.log(10.0), dtype=x.dtype)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3125,7 +3223,7 @@ class Exp2(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz * exp2(x) * log(np.cast[x.type](2)),)
+        return (gz * exp2(x) * log(np.array(2, dtype=x.type)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3264,7 +3362,7 @@ class Deg2Rad(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz * np.asarray(np.pi / 180, gz.type),)
+        return (gz * np.array(np.pi / 180, dtype=gz.type),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3299,7 +3397,7 @@ class Rad2Deg(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz * np.asarray(180.0 / np.pi, gz.type),)
+        return (gz * np.array(180.0 / np.pi, dtype=gz.type),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3372,7 +3470,7 @@ class ArcCos(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (-gz / sqrt(np.cast[x.type](1) - sqr(x)),)
+        return (-gz / sqrt(np.array(1, dtype=x.type) - sqr(x)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3446,7 +3544,7 @@ class ArcSin(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz / sqrt(np.cast[x.type](1) - sqr(x)),)
+        return (gz / sqrt(np.array(1, dtype=x.type) - sqr(x)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3518,7 +3616,7 @@ class ArcTan(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz / (np.cast[x.type](1) + sqr(x)),)
+        return (gz / (np.array(1, dtype=x.type) + sqr(x)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3641,7 +3739,7 @@ class ArcCosh(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz / sqrt(sqr(x) - np.cast[x.type](1)),)
+        return (gz / sqrt(sqr(x) - np.array(1, dtype=x.type)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3718,7 +3816,7 @@ class ArcSinh(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz / sqrt(sqr(x) + np.cast[x.type](1)),)
+        return (gz / sqrt(sqr(x) + np.array(1, dtype=x.type)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs
@@ -3796,7 +3894,7 @@ class ArcTanh(UnaryScalarOp):
             else:
                 return [x.zeros_like()]
 
-        return (gz / (np.cast[x.type](1) - sqr(x)),)
+        return (gz / (np.array(1, dtype=x.type) - sqr(x)),)
 
     def c_code(self, node, name, inputs, outputs, sub):
         (x,) = inputs

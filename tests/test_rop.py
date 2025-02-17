@@ -16,8 +16,14 @@ import pytest
 
 import pytensor
 import pytensor.tensor as pt
-from pytensor import function
-from pytensor.gradient import Lop, Rop, grad, grad_undefined
+from pytensor import config, function
+from pytensor.gradient import (
+    Lop,
+    NullTypeGradError,
+    Rop,
+    grad,
+    grad_undefined,
+)
 from pytensor.graph.basic import Apply
 from pytensor.graph.op import Op
 from pytensor.tensor.math import argmax, dot
@@ -61,6 +67,10 @@ class RopLopChecker:
     Rop to class that inherit from it.
     """
 
+    @staticmethod
+    def rtol():
+        return 1e-7 if config.floatX == "float64" else 1e-5
+
     def setup_method(self):
         # Using vectors make things a lot simpler for generating the same
         # computations using scan
@@ -72,13 +82,13 @@ class RopLopChecker:
         self.mv = matrix("mv")
         self.mat_in_shape = (5 + self.rng.integers(3), 5 + self.rng.integers(3))
 
-    def check_nondiff_rop(self, y):
+    def check_nondiff_rop(self, y, x, v):
         """
         If your op is not differentiable(so you can't define Rop)
         test that an error is raised.
         """
         with pytest.raises(ValueError):
-            Rop(y, self.x, self.v)
+            Rop(y, x, v, use_op_rop_implementation=True)
 
     def check_mat_rop_lop(self, y, out_shape):
         """
@@ -106,8 +116,14 @@ class RopLopChecker:
         vv = np.asarray(
             self.rng.uniform(size=self.mat_in_shape), pytensor.config.floatX
         )
-        yv = Rop(y, self.mx, self.mv)
+        yv = Rop(y, self.mx, self.mv, use_op_rop_implementation=True)
         rop_f = function([self.mx, self.mv], yv, on_unused_input="ignore")
+
+        yv_through_lop = Rop(y, self.mx, self.mv, use_op_rop_implementation=False)
+        rop_through_lop_f = function(
+            [self.mx, self.mv], yv_through_lop, on_unused_input="ignore"
+        )
+
         sy, _ = pytensor.scan(
             lambda i, y, x, v: (grad(y[i], x) * v).sum(),
             sequences=pt.arange(y.shape[0]),
@@ -115,13 +131,14 @@ class RopLopChecker:
         )
         scan_f = function([self.mx, self.mv], sy, on_unused_input="ignore")
 
-        v1 = rop_f(vx, vv)
-        v2 = scan_f(vx, vv)
-
-        assert np.allclose(v1, v2), f"ROP mismatch: {v1} {v2}"
+        v_ref = scan_f(vx, vv)
+        np.testing.assert_allclose(rop_f(vx, vv), v_ref)
+        np.testing.assert_allclose(rop_through_lop_f(vx, vv), v_ref)
 
         self.check_nondiff_rop(
-            pytensor.clone_replace(y, replace={self.mx: break_op(self.mx)})
+            pytensor.clone_replace(y, replace={self.mx: break_op(self.mx)}),
+            self.mx,
+            self.mv,
         )
 
         vv = np.asarray(self.rng.uniform(size=out_shape), pytensor.config.floatX)
@@ -131,44 +148,46 @@ class RopLopChecker:
         sy = grad((self.v * y).sum(), self.mx)
         scan_f = function([self.mx, self.v], sy)
 
-        v1 = lop_f(vx, vv)
-        v2 = scan_f(vx, vv)
-        assert np.allclose(v1, v2), f"LOP mismatch: {v1} {v2}"
+        v = lop_f(vx, vv)
+        v_ref = scan_f(vx, vv)
+        np.testing.assert_allclose(v, v_ref)
 
-    def check_rop_lop(self, y, out_shape):
+    def check_rop_lop(self, y, out_shape, check_nondiff_rop: bool = True):
         """
         As check_mat_rop_lop, except the input is self.x which is a
         vector. The output is still a vector.
         """
+        rtol = self.rtol()
+
         # TEST ROP
         vx = np.asarray(self.rng.uniform(size=self.in_shape), pytensor.config.floatX)
         vv = np.asarray(self.rng.uniform(size=self.in_shape), pytensor.config.floatX)
 
-        yv = Rop(y, self.x, self.v)
+        yv = Rop(y, self.x, self.v, use_op_rop_implementation=True)
         rop_f = function([self.x, self.v], yv, on_unused_input="ignore")
+
+        yv_through_lop = Rop(y, self.x, self.v, use_op_rop_implementation=False)
+        rop_through_lop_f = function(
+            [self.x, self.v], yv_through_lop, on_unused_input="ignore"
+        )
+
         J, _ = pytensor.scan(
             lambda i, y, x: grad(y[i], x),
             sequences=pt.arange(y.shape[0]),
             non_sequences=[y, self.x],
         )
         sy = dot(J, self.v)
-
         scan_f = function([self.x, self.v], sy, on_unused_input="ignore")
 
-        v1 = rop_f(vx, vv)
-        v2 = scan_f(vx, vv)
-        assert np.allclose(v1, v2), f"ROP mismatch: {v1} {v2}"
+        v_ref = scan_f(vx, vv)
+        np.testing.assert_allclose(rop_f(vx, vv), v_ref, rtol=rtol)
+        np.testing.assert_allclose(rop_through_lop_f(vx, vv), v_ref, rtol=rtol)
 
-        try:
-            Rop(
+        if check_nondiff_rop:
+            self.check_nondiff_rop(
                 pytensor.clone_replace(y, replace={self.x: break_op(self.x)}),
                 self.x,
                 self.v,
-            )
-        except ValueError:
-            pytest.skip(
-                "Rop does not handle non-differentiable inputs "
-                "correctly. Bug exposed by fixing Add.grad method."
             )
 
         vx = np.asarray(self.rng.uniform(size=self.in_shape), pytensor.config.floatX)
@@ -182,22 +201,20 @@ class RopLopChecker:
             non_sequences=[y, self.x],
         )
         sy = dot(self.v, J)
-
         scan_f = function([self.x, self.v], sy)
 
-        v1 = lop_f(vx, vv)
-        v2 = scan_f(vx, vv)
-        assert np.allclose(v1, v2), f"LOP mismatch: {v1} {v2}"
+        v = lop_f(vx, vv)
+        v_ref = scan_f(vx, vv)
+        np.testing.assert_allclose(v, v_ref, rtol=rtol)
 
 
 class TestRopLop(RopLopChecker):
     def test_max(self):
-        # self.check_mat_rop_lop(pt_max(self.mx, axis=[0,1])[0], ())
         self.check_mat_rop_lop(pt_max(self.mx, axis=0), (self.mat_in_shape[1],))
         self.check_mat_rop_lop(pt_max(self.mx, axis=1), (self.mat_in_shape[0],))
 
     def test_argmax(self):
-        self.check_nondiff_rop(argmax(self.mx, axis=1))
+        self.check_nondiff_rop(argmax(self.mx, axis=1), self.mx, self.mv)
 
     def test_subtensor(self):
         self.check_rop_lop(self.x[:4], (4,))
@@ -252,10 +269,14 @@ class TestRopLop(RopLopChecker):
         insh = self.in_shape[0]
         vW = np.asarray(self.rng.uniform(size=(insh, insh)), pytensor.config.floatX)
         W = pytensor.shared(vW)
-        self.check_rop_lop(dot(self.x, W), self.in_shape)
+        # check_nondiff_rop reveals an error in how legacy Rop handles non-differentiable paths
+        # See: test_Rop_partially_differentiable_paths
+        self.check_rop_lop(dot(self.x, W), self.in_shape, check_nondiff_rop=False)
 
     def test_elemwise0(self):
-        self.check_rop_lop((self.x + 1) ** 2, self.in_shape)
+        # check_nondiff_rop reveals an error in how legacy Rop handles non-differentiable paths
+        # See: test_Rop_partially_differentiable_paths
+        self.check_rop_lop((self.x + 1) ** 2, self.in_shape, check_nondiff_rop=False)
 
     def test_elemwise1(self):
         self.check_rop_lop(self.x + pt.cast(self.x, "int32"), self.in_shape)
@@ -287,18 +308,18 @@ class TestRopLop(RopLopChecker):
             self.mat_in_shape[0] * self.mat_in_shape[1] * self.in_shape[0],
         )
 
-    def test_invalid_input(self):
-        success = False
+    @pytest.mark.parametrize("use_op_rop_implementation", [True, False])
+    def test_invalid_input(self, use_op_rop_implementation):
+        with pytest.raises(ValueError):
+            Rop(
+                0.0,
+                [matrix()],
+                [vector()],
+                use_op_rop_implementation=use_op_rop_implementation,
+            )
 
-        try:
-            Rop(0.0, [matrix()], [vector()])
-            success = True
-        except ValueError:
-            pass
-
-        assert not success
-
-    def test_multiple_outputs(self):
+    @pytest.mark.parametrize("use_op_rop_implementation", [True, False])
+    def test_multiple_outputs(self, use_op_rop_implementation):
         m = matrix("m")
         v = vector("v")
         m_ = matrix("m_")
@@ -309,10 +330,20 @@ class TestRopLop(RopLopChecker):
         m_val = self.rng.uniform(size=(3, 7)).astype(pytensor.config.floatX)
         v_val = self.rng.uniform(size=(7,)).astype(pytensor.config.floatX)
 
-        rop_out1 = Rop([m, v, m + v], [m, v], [m_, v_])
+        rop_out1 = Rop(
+            [m, v, m + v],
+            [m, v],
+            [m_, v_],
+            use_op_rop_implementation=use_op_rop_implementation,
+        )
         assert isinstance(rop_out1, list)
         assert len(rop_out1) == 3
-        rop_out2 = Rop((m, v, m + v), [m, v], [m_, v_])
+        rop_out2 = Rop(
+            (m, v, m + v),
+            [m, v],
+            [m_, v_],
+            use_op_rop_implementation=use_op_rop_implementation,
+        )
         assert isinstance(rop_out2, tuple)
         assert len(rop_out2) == 3
 
@@ -322,12 +353,65 @@ class TestRopLop(RopLopChecker):
         f = pytensor.function([m, v, m_, v_], all_outs)
         f(mval, vval, m_val, v_val)
 
-    def test_Rop_dot_bug_18Oct2013_Jeremiah(self):
+    @pytest.mark.parametrize(
+        "use_op_rop_implementation",
+        [pytest.param(True, marks=pytest.mark.xfail()), False],
+    )
+    def test_Rop_partially_differentiable_paths(self, use_op_rop_implementation):
         # This test refers to a bug reported by Jeremiah Lowin on 18th Oct
         # 2013. The bug consists when through a dot operation there is only
         # one differentiable path (i.e. there is no gradient wrt to one of
         # the inputs).
         x = pt.arange(20.0).reshape([1, 20])
-        v = pytensor.shared(np.ones([20]))
+        v = pytensor.shared(np.ones([20]), name="v")
         d = dot(x, v).sum()
-        Rop(grad(d, v), v, v)
+
+        Rop(
+            grad(d, v),
+            v,
+            v,
+            use_op_rop_implementation=use_op_rop_implementation,
+            # 2025: This is a tricky case, the gradient of the gradient does not depend on v
+            # although v still exists in the graph inside a `Second` operator.
+            # The original test was checking that Rop wouldn't raise an error, but Lop does.
+            # Since the correct behavior is ambiguous, I let both implementations off the hook.
+            disconnected_outputs="raise" if use_op_rop_implementation else "ignore",
+        )
+
+        # 2025: Here is an unambiguous test for the original commented issue:
+        x = pt.matrix("x")
+        y = pt.matrix("y")
+        out = dot(x, break_op(y)).sum()
+        # Should not raise an error
+        Rop(
+            out,
+            [x],
+            [x.type()],
+            use_op_rop_implementation=use_op_rop_implementation,
+            disconnected_outputs="raise",
+        )
+
+        # More extensive testing shows that the legacy Rop implementation FAILS to raise when
+        # the cost is linked through strictly non-differentiable paths.
+        # This is not Dot specific, we would observe the same with any operation where the gradient
+        # with respect to one of the inputs does not depend on the original input (such as `mul`, `add`, ...)
+        out = dot(break_op(x), y).sum()
+        with pytest.raises((ValueError, NullTypeGradError)):
+            Rop(
+                out,
+                [x],
+                [x.type()],
+                use_op_rop_implementation=use_op_rop_implementation,
+                disconnected_outputs="raise",
+            )
+
+        # Only when both paths are non-differentiable is an error correctly raised again.
+        out = dot(break_op(x), break_op(y)).sum()
+        with pytest.raises((ValueError, NullTypeGradError)):
+            Rop(
+                out,
+                [x],
+                [x.type()],
+                use_op_rop_implementation=use_op_rop_implementation,
+                disconnected_outputs="raise",
+            )

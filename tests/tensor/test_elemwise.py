@@ -18,6 +18,7 @@ from pytensor.graph.fg import FunctionGraph
 from pytensor.graph.replace import vectorize_node
 from pytensor.link.basic import PerformLinker
 from pytensor.link.c.basic import CLinker, OpWiseCLinker
+from pytensor.npy_2_compat import numpy_maxdims
 from pytensor.tensor import as_tensor_variable
 from pytensor.tensor.basic import get_scalar_constant_value, second
 from pytensor.tensor.elemwise import CAReduce, DimShuffle, Elemwise
@@ -39,7 +40,27 @@ from pytensor.tensor.type import (
 )
 from tests import unittest_tools
 from tests.link.test_link import make_function
-from tests.tensor.test_math import reduce_bitwise_and
+
+
+def reduce_bitwise_and(x, axis=-1, dtype="int8"):
+    """Helper function for TestCAReduce"""
+    if dtype == "uint8":
+        # in numpy version >= 2.0, out of bounds uint8 values are not converted
+        identity = np.array((255,), dtype=dtype)[0]
+    else:
+        identity = np.array((-1,), dtype=dtype)[0]
+
+    shape_without_axis = tuple(s for i, s in enumerate(x.shape) if i != axis)
+    if 0 in shape_without_axis:
+        return np.empty(shape=shape_without_axis, dtype=x.dtype)
+
+    def custom_reduce(a):
+        out = identity
+        for i in range(a.size):
+            out = np.bitwise_and(a[i], out)
+        return out
+
+    return np.apply_along_axis(custom_reduce, axis, x)
 
 
 class TestDimShuffle(unittest_tools.InferShapeTester):
@@ -121,7 +142,8 @@ class TestDimShuffle(unittest_tools.InferShapeTester):
 
     def test_too_big_rank(self):
         x = self.type(self.dtype, shape=())()
-        y = x.dimshuffle(("x",) * (np.MAXDIMS + 1))
+        y = x.dimshuffle(("x",) * (numpy_maxdims + 1))
+
         with pytest.raises(ValueError):
             y.eval({x: 0})
 
@@ -672,7 +694,7 @@ class TestCAReduce(unittest_tools.InferShapeTester):
         assert self.op(ps.add, axis=(-1,))(x).eval({x: 5}) == 5
 
         with pytest.raises(
-            np.AxisError,
+            np.exceptions.AxisError,
             match=re.escape("axis (-2,) is out of bounds for array of dimension 0"),
         ):
             self.op(ps.add, axis=(-2,))(x)
