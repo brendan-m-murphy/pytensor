@@ -101,7 +101,7 @@ class TensorType(CType[np.ndarray], HasDataType, HasShape):
         if str(dtype) == "floatX":
             self.dtype = config.floatX
         else:
-            if np.obj2sctype(dtype) is None:
+            if np.dtype(dtype).type is None:
                 raise TypeError(f"Invalid dtype: {dtype}")
 
             self.dtype = np.dtype(dtype).name
@@ -177,7 +177,7 @@ class TensorType(CType[np.ndarray], HasDataType, HasShape):
         else:
             if allow_downcast:
                 # Convert to self.dtype, regardless of the type of data
-                data = np.asarray(data, dtype=self.dtype)
+                data = np.asarray(data).astype(self.dtype)
                 # TODO: consider to pad shape with ones to make it consistent
                 # with self.broadcastable... like vector->row type thing
             else:
@@ -789,14 +789,16 @@ def tensor(
     **kwargs,
 ) -> "TensorVariable":
     if name is not None:
-        # Help catching errors with the new tensor API
-        # Many single letter strings are valid sctypes
-        if str(name) == "floatX" or (len(str(name)) > 1 and np.obj2sctype(name)):
-            np.obj2sctype(name)
-            raise ValueError(
-                f"The first and only positional argument of tensor is now `name`. Got {name}.\n"
-                "This name looks like a dtype, which you should pass as a keyword argument only."
-            )
+        try:
+            # Help catching errors with the new tensor API
+            # Many single letter strings are valid sctypes
+            if str(name) == "floatX" or (len(str(name)) > 1 and np.dtype(name).type):
+                raise ValueError(
+                    f"The first and only positional argument of tensor is now `name`. Got {name}.\n"
+                    "This name looks like a dtype, which you should pass as a keyword argument only."
+                )
+        except TypeError:
+            pass
 
     if dtype is None:
         dtype = config.floatX

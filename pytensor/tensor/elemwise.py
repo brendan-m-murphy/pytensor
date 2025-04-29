@@ -1,10 +1,18 @@
+import warnings
 from collections.abc import Sequence
 from copy import copy
 from textwrap import dedent
 from typing import Literal
 
 import numpy as np
-from numpy.core.numeric import normalize_axis_tuple
+
+
+try:
+    from numpy.lib.array_utils import normalize_axis_tuple
+except ModuleNotFoundError as e:
+    # numpy < 2.0
+    warnings.warn(f"Importing from numpy version < 2.0.0 location: {e}")
+    from numpy.core.numeric import normalize_axis_tuple
 
 import pytensor.tensor.basic
 from pytensor.configdefaults import config
@@ -667,7 +675,7 @@ class Elemwise(OpenMPOp):
             and isinstance(self.nfunc, np.ufunc)
             and node.inputs[0].dtype in discrete_dtypes
         ):
-            char = np.sctype2char(out_dtype)
+            char = np.dtype(out_dtype).char
             sig = char * node.nin + "->" + char * node.nout
             node.tag.sig = sig
         node.tag.fake_node = Apply(

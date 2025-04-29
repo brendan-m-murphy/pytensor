@@ -166,12 +166,12 @@ class TestFunctionIn:
         # Value too big for a, silently ignored
         assert np.array_equal(f([2**20], np.ones(1, dtype="int8"), 1), [2])
 
-        # Value too big for b, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for b, raises OverflowError
+        with pytest.raises(OverflowError):
             f([3], [312], 1)
 
-        # Value too big for c, raises TypeError
-        with pytest.raises(TypeError):
+        # Value too big for c, raises OverflowError
+        with pytest.raises(OverflowError):
             f([3], [6], 806)
 
     def test_in_allow_downcast_floatX(self):
